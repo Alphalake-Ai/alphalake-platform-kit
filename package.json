@@ -1,0 +1,46 @@
+{
+  "name": "@alphalake/platform-kit",
+  "version": "0.1.3",
+  "description": "Shared Alphalake central-auth backend/frontend plumbing and UI theme tokens, for reuse across Alphalake platform modules.",
+  "license": "UNLICENSED",
+  "private": true,
+  "files": [
+    "src/server",
+    "src/ui/theme.css",
+    "AGENTS.md",
+    "docs/backend-layout.md",
+    "dist"
+  ],
+  "exports": {
+    "./server": "./src/server/index.js",
+    "./client": {
+      "types": "./dist/client/index.d.mts",
+      "import": "./dist/client/index.mjs"
+    },
+    "./ui": {
+      "types": "./dist/ui/index.d.mts",
+      "import": "./dist/ui/index.mjs"
+    },
+    "./ui/theme.css": "./src/ui/theme.css"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.400.0",
+    "radix-ui": "^1.6.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.24.1",
+    "tailwind-merge": "^3.6.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.5.2"
+  }
+}
