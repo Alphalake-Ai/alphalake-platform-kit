@@ -1,0 +1,21 @@
+Copyright (c) 2026 Alphalake
+
+This software and its source code are proprietary and confidential.
+All rights reserved.
+
+Permission to use, copy, modify, and distribute this software is granted
+ONLY to Alphalake and its employees, contractors, and client projects
+acting on Alphalake's behalf, solely for building and operating Alphalake
+platform modules. This includes installing the package as a dependency of
+Alphalake projects via git or npm.
+
+No other use, reproduction, distribution, or publication of this software,
+in source or binary form, is permitted without the prior written consent
+of Alphalake.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+ALPHALAKE BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR ITS USE.

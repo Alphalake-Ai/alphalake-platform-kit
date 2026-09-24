@@ -6,11 +6,14 @@ platform modules. Install as a git dependency (no registry needed for
 internal use):
 
 ```bash
-npm install "git+https://github.com/Alphalake-Ai/alphalake-platform-kit.git#v0.1.2"
+npm install "git+https://github.com/Alphalake-Ai/alphalake-platform-kit.git#v0.1.3"
 ```
 
-Pin to a tag (`#v0.1.2`), not `main`, for reproducible builds. For a private
-repo the installing machine needs git credentials (an HTTPS token or SSH key).
+Pin to a tag (`#v0.1.3`), not `main`, for reproducible builds.
+
+> **License:** proprietary — see [`LICENSE`](LICENSE). Use is restricted to
+> Alphalake and its projects; the repo is public so deployments can install
+> it without git credentials.
 
 > **AI coding agents:** read [`AGENTS.md`](AGENTS.md) first — it explains the
 > central-auth architecture, the brand theme rules, and the required backend

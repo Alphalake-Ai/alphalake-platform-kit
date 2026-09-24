@@ -5,6 +5,7 @@
   "license": "UNLICENSED",
   "private": true,
   "files": [
+    "LICENSE",
     "src/server",
     "src/ui/theme.css",
     "AGENTS.md",
