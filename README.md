@@ -6,10 +6,10 @@ platform modules. Install as a git dependency (no registry needed for
 internal use):
 
 ```bash
-npm install "git+https://github.com/Alphalake-Ai/alphalake-platform-kit.git#v0.1.3"
+npm install "git+https://github.com/Alphalake-Ai/alphalake-platform-kit.git#v0.1.4"
 ```
 
-Pin to a tag (`#v0.1.3`), not `main`, for reproducible builds.
+Pin to a tag (`#v0.1.4`), not `main`, for reproducible builds.
 
 > **License:** proprietary — see [`LICENSE`](LICENSE). Use is restricted to
 > Alphalake and its projects; the repo is public so deployments can install
@@ -37,6 +37,7 @@ Three subpath exports, used independently:
 
 - **`@alphalake/platform-kit/server`** — Node/Express, CommonJS, ships unbuilt (no build step, same as this repo's own backend convention).
 - **`@alphalake/platform-kit/client`** — React/Vite frontend plumbing, prebuilt ESM + types.
+  - **`@alphalake/platform-kit/client/appHost`** — just `createAppHost` (no `react-router-dom` import), for hosts without React Router such as Next.js App Router. Port `CentralAuthGate`/`AuthErrorToast` to the host router yourself.
 - **`@alphalake/platform-kit/ui`** + **`@alphalake/platform-kit/ui/theme.css`** — the shadcn/Tailwind v4 token layer (now carrying the actual Alphalake brand colors, not a neutral placeholder), `cn()`/avatar helpers, a Button primitive, and the shared dashboard chrome (`AppTopBar`, `AppSidebar`, `SidebarProvider`).
 
 ## What's genuinely reusable vs. what isn't

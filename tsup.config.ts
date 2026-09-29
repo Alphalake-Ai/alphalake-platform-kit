@@ -3,6 +3,8 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: {
     'client/index': 'src/client/index.ts',
+    // Router-free entry for hosts without react-router-dom (e.g. Next.js App Router).
+    'client/appHost': 'src/client/appHost.ts',
     'ui/index': 'src/ui/index.ts',
   },
   format: ['esm'],
