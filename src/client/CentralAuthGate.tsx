@@ -49,6 +49,9 @@ const DEFAULT_AUTH_ERROR_MESSAGES: Record<string, string> = {
   invalid_token: 'Sign-in failed. Please try signing in again.',
   missing_token: 'Sign-in failed. Please try signing in again.',
   invalid_link: 'This link is invalid or has expired.',
+  account_disabled: 'This account has been disabled. Please contact your administrator.',
+  session_revoked: 'Your session has ended. Please sign in again.',
+  login_state_mismatch: "Sign-in couldn't be completed in this tab. Please try signing in again.",
 };
 
 // Surfaces central-auth failures the callback route signals via ?auth_error=<code>,
@@ -60,6 +63,9 @@ export const AuthErrorToast: React.FC<AuthErrorToastProps> = ({ appHost, showToa
   useEffect(() => {
     const code = new URLSearchParams(location.search).get('auth_error');
     if (!code) return;
+    // Some codes are handled by a redirect (e.g. a revoked session goes back
+    // through the platform sign-in) rather than an error.
+    if (appHost.recoverFromAuthError(code)) return;
     // Remember the failure for this tab so CentralAuthGate stops bouncing the
     // user back to login — a rejected account would otherwise loop forever.
     sessionStorage.setItem(appHost.AUTH_BLOCKED_KEY, code);

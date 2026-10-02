@@ -12,6 +12,28 @@ const { generatePayloadSignature } = require('./platformClient');
 //          image_url, phone, token_version INT DEFAULT 0, last_login_at
 //   organisations: id, name, description, external_id UNIQUE, platform_entity_id
 //   processed_webhook_events: signature TEXT PRIMARY KEY, created_at (see ensureSchema)
+//   used_login_tokens: token_hash TEXT PRIMARY KEY, first_used_at, expires_at (see ensureSchema)
+
+// The `ls` login-state nonce the client puts in myaccount's `continue` URL
+// (createAppHost's `loginState` option). Opaque here: only echoed back.
+const LOGIN_STATE_RE = /^[A-Za-z0-9_-]{16,128}$/;
+
+function loginStateFrom(continueUrl) {
+  if (typeof continueUrl !== 'string' || !continueUrl) return null;
+  try {
+    const state = new URL(continueUrl).searchParams.get('ls');
+    return state && LOGIN_STATE_RE.test(state) ? state : null;
+  } catch {
+    return null;
+  }
+}
+
+// verifyIdToken failures the client can act on; anything else is invalid_token.
+const FIREBASE_LOGIN_ERRORS = {
+  'auth/id-token-revoked': 'session_revoked',
+  'auth/user-disabled': 'account_disabled',
+};
+
 function createCentralAuth(opts) {
   const {
     pool,
@@ -31,6 +53,14 @@ function createCentralAuth(opts) {
     // Defaults to a no-op so this module has no opinion on app-specific access models.
     onUserAccessChanged = async () => {},
     fileLog = () => {},
+    // Reject Firebase ID tokens whose session was revoked (password change,
+    // admin sign-out) or whose user is disabled. One extra Firebase call per login.
+    checkRevoked = true,
+    // Each Firebase ID token logs in once. The token travels in the callback's
+    // query string, so proxies/load balancers log it; this stops a copy from a
+    // log being redeemed later. Repeats within this window still pass, so a
+    // browser or load-balancer retry of the same callback isn't refused.
+    loginTokenReuseGraceSeconds = 60,
   } = opts;
 
   if (!jwtSecret) throw new Error('createCentralAuth: jwtSecret is required');
@@ -93,19 +123,71 @@ function createCentralAuth(opts) {
       )
     `);
     await pool.query(`DELETE FROM processed_webhook_events WHERE created_at < NOW() - INTERVAL '90 days'`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS used_login_tokens (
+        token_hash TEXT PRIMARY KEY,
+        first_used_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+      )
+    `);
+    await pool.query(`DELETE FROM used_login_tokens WHERE expires_at < NOW()`);
+  }
+
+  // Records a Firebase ID token's first use. False once it was first used more
+  // than loginTokenReuseGraceSeconds ago. Rows only matter until the token's
+  // own expiry (verifyIdToken refuses it after that), so they're pruned then.
+  let warnedNoTokenTable = false;
+  async function claimLoginToken(idToken, exp) {
+    const hash = crypto.createHash('sha256').update(idToken).digest('hex');
+    try {
+      await pool.query('DELETE FROM used_login_tokens WHERE expires_at < NOW()');
+      const { rows } = await pool.query(
+        `INSERT INTO used_login_tokens (token_hash, expires_at) VALUES ($1, to_timestamp($2))
+         ON CONFLICT (token_hash) DO UPDATE SET token_hash = EXCLUDED.token_hash
+         RETURNING first_used_at > NOW() - ($3::int * INTERVAL '1 second') AS fresh`,
+        [hash, exp, loginTokenReuseGraceSeconds]
+      );
+      return rows[0].fresh;
+    } catch (err) {
+      // Table missing (ensureSchema not run): don't lock everyone out over a
+      // defence-in-depth check, but say so.
+      if (err?.code !== '42P01') throw err;
+      if (!warnedNoTokenTable) {
+        warnedNoTokenTable = true;
+        console.error('[CentralAuth] used_login_tokens is missing — call ensureSchema() at startup. Login tokens are not single-use until it exists.');
+      }
+      return true;
+    }
   }
 
   // Central-auth login callback. The platform redirects the browser here with a
   // Firebase ID token in the URL (?token=...). Verify it, refresh the user's
   // profile from Firebase, mint our own session JWT, and hand it to the SPA via
   // the `_t` hash mechanism (see consumeTokenFromHash in the client package).
+  // An `ls` login-state value in myaccount's echoed `continue` URL is passed
+  // back next to `_t`, so the client can tell it started this login.
   const callback = async (req, res) => {
     const token = req.query.token;
     if (!token || typeof token !== 'string') {
       return res.redirect(`${publicAppUrl}/#/?auth_error=missing_token`);
     }
+    const loginFailed = (code, reason) => {
+      fileLog('user-actions', { event: 'login_failed', reason });
+      return res.redirect(`${publicAppUrl}/#/?auth_error=${code}`);
+    };
     try {
-      const decoded = await getFirebaseAuth().verifyIdToken(token);
+      let decoded;
+      try {
+        decoded = await getFirebaseAuth().verifyIdToken(token, checkRevoked);
+      } catch (err) {
+        const code = FIREBASE_LOGIN_ERRORS[err?.code];
+        if (!code) throw err;
+        return loginFailed(code, err.code);
+      }
+      if (!(await claimLoginToken(token, decoded.exp))) {
+        console.warn(`[CentralAuth] callback: refused a reused login token for uid ${decoded.uid}`);
+        return loginFailed('invalid_token', 'login token already used');
+      }
       const uid = decoded.uid;
 
       const { rows } = await pool.query('SELECT id, email, name, role, org_id FROM users WHERE firebase_uid = $1', [uid]);
@@ -131,11 +213,13 @@ function createCentralAuth(opts) {
 
       const sessionToken = signSession(user);
       fileLog('user-actions', { event: 'login', userId: user.id, email: user.email, role: user.role, orgId: user.org_id });
-      return res.redirect(`${publicAppUrl}/#/${landingPath(user)}?_t=${encodeURIComponent(sessionToken)}`);
+      const loginState = loginStateFrom(req.query.continue);
+      return res.redirect(
+        `${publicAppUrl}/#/${landingPath(user)}?_t=${encodeURIComponent(sessionToken)}${loginState ? `&ls=${loginState}` : ''}`
+      );
     } catch (err) {
       console.error('[CentralAuth] callback failed:', err?.message);
-      fileLog('user-actions', { event: 'login_failed', reason: err?.message });
-      return res.redirect(`${publicAppUrl}/#/?auth_error=invalid_token`);
+      return loginFailed('invalid_token', err?.message);
     }
   };
 

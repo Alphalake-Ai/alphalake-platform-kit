@@ -1,6 +1,6 @@
 {
   "name": "@alphalake/platform-kit",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Shared Alphalake central-auth backend/frontend plumbing and UI theme tokens, for reuse across Alphalake platform modules.",
   "license": "UNLICENSED",
   "private": true,
@@ -32,13 +32,15 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "test": "node --test \"test/*.test.*\""
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.400.0",
     "radix-ui": "^1.6.0",
     "react": "^18.3.1",

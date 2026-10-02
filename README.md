@@ -6,10 +6,10 @@ platform modules. Install as a git dependency (no registry needed for
 internal use):
 
 ```bash
-npm install "git+https://github.com/Alphalake-Ai/alphalake-platform-kit.git#v0.1.4"
+npm install "git+https://github.com/Alphalake-Ai/alphalake-platform-kit.git#v0.1.5"
 ```
 
-Pin to a tag (`#v0.1.4`), not `main`, for reproducible builds.
+Pin to a tag (`#v0.1.5`), not `main`, for reproducible builds.
 
 > **License:** proprietary — see [`LICENSE`](LICENSE). Use is restricted to
 > Alphalake and its projects; the repo is public so deployments can install
@@ -82,9 +82,11 @@ const centralAuth = createCentralAuth({
     await syncYourAppsDerivedAccessTable(localOrgId); // your own hook, or omit for a no-op
   },
   fileLog,                                 // optional (category, entry) => void
+  // checkRevoked: true,                   // default — refuse revoked sessions / disabled users at login
+  // loginTokenReuseGraceSeconds: 60,      // default — each Firebase ID token logs in once (retries within this pass)
 });
 
-await centralAuth.ensureSchema();          // once at startup — creates processed_webhook_events
+await centralAuth.ensureSchema();          // once at startup — creates processed_webhook_events + used_login_tokens
 
 app.get('/api/auth/callback', centralAuth.handlers.callback);
 app.post('/api/auth/refresh-profile', centralAuth.authenticate, centralAuth.handlers.refreshProfile);
@@ -145,11 +147,34 @@ CREATE TABLE IF NOT EXISTS processed_webhook_events (
   signature TEXT PRIMARY KEY,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- sha256 of each Firebase ID token used at /api/auth/callback, until it expires
+CREATE TABLE IF NOT EXISTS used_login_tokens (
+  token_hash TEXT PRIMARY KEY,
+  first_used_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at TIMESTAMP WITH TIME ZONE NOT NULL
+);
 ```
 
 `createCentralAuth().ensureSchema()` creates/prunes `processed_webhook_events`
-for you; the `users`/`organisations` columns are assumed to already exist in
-your schema (the DDL block above shows the full reference shape).
+and `used_login_tokens` for you; the `users`/`organisations` columns are
+assumed to already exist in your schema (the DDL block above shows the full
+reference shape). If your app manages its schema with a migration tool (e.g.
+Prisma), add both tables to it so the tool doesn't treat them as drift.
+
+### Login callback hardening (0.1.5)
+
+- **Single-use login tokens.** The Firebase ID token arrives in the callback's
+  query string, so proxies and load balancers log it. Each token now logs in
+  once; a repeat within `loginTokenReuseGraceSeconds` (default 60) still passes
+  so a retried request isn't refused, and anything later gets
+  `auth_error=invalid_token`.
+- **Revoked sessions.** `verifyIdToken` runs with `checkRevoked` (default on).
+  A revoked session redirects with `auth_error=session_revoked`, a disabled
+  user with `auth_error=account_disabled`.
+- **Login state echo.** If myaccount's `continue` URL carries an `ls` value
+  (the client's `loginState` option), the callback passes it back next to
+  `_t`. Harmless for clients that don't use it.
 
 ## `@alphalake/platform-kit/client`
 
@@ -167,6 +192,7 @@ export const appHost = createAppHost({
   centralLogoutUrl: import.meta.env.VITE_CENTRAL_LOGOUT_URL ?? 'https://myaccount.alphalake.ai/logout',
   centralManageUrl: import.meta.env.VITE_CENTRAL_MANAGE_URL ?? 'https://myaccount.alphalake.ai/manage',
   apiBase: import.meta.env.VITE_API_BASE || '/api',
+  loginState: true,                        // see "Login state" below — needs the backend on >= 0.1.5
   isAuthenticated: () => api.isAuthenticated(),
   setToken: (t) => api.setToken(t),
   getToken: () => localStorage.getItem('authToken'),
@@ -195,6 +221,26 @@ function AppContent() {
   );
 }
 ```
+
+### Login state (`loginState: true`, recommended)
+
+Binds each login to the tab that started it, so nobody can sign a user in as
+someone else by sending them a link carrying their own `_t` (login CSRF).
+`centralLoginLink()` adds a random `ls` to myaccount's `continue` URL, the
+callback passes it back, and `consumeTokenFromHash()` only accepts a `_t`
+whose `ls` matches (it returns `'accepted' | 'refused' | 'none'`). A refused
+`_t` is dropped and the tab signs in normally; a second refusal in the same
+tab becomes `auth_error=login_state_mismatch` instead of a redirect loop.
+
+- **Roll out the backend first.** A client with `loginState` against a backend
+  on kit < 0.1.5 refuses every login.
+- Not compatible with the `goToApp` marketing-host handoff (it carries `_t`
+  across origins, which can't share the tab's state).
+
+Call `appHost.recoverFromAuthError(code)` before showing an `auth_error`
+(`AuthErrorToast` does): for `session_revoked` it sends the user through the
+platform logout once, which lands on the normal sign-in page, and returns
+`true`.
 
 `SetPasswordPage` pairs with the server's `createReviewLink` — see its JSDoc
 in `src/client/SetPasswordPage.tsx` for the full prop list (`validateLink`,
@@ -299,6 +345,7 @@ state tooltips — you only supply `sections`.
 npm install
 npm run typecheck   # tsc --noEmit over src/client + src/ui
 npm run build        # tsup -> dist/{client,ui}/index.{mjs,d.mts}
+npm test             # node --test test/ (Node >= 22.18: imports the .ts client source directly)
 ```
 
 `src/server` ships unbuilt as plain CommonJS — no build step, run directly by

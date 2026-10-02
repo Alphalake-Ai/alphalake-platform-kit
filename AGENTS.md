@@ -39,6 +39,11 @@ its own session JWTs after the platform vouches for the user.
 4. The JWT is handed to the SPA through the URL hash
    (`${publicAppUrl}/#/<landing>?_t=<jwt>`); `appHost.consumeTokenFromHash()`
    on the client picks it up and stores it for `Authorization: Bearer` calls.
+   Turn on the client's `loginState` option so a `_t` is only accepted in the
+   tab that started the login (the callback echoes the `ls` value from
+   myaccount's `continue` URL). Each Firebase ID token logs in once, and
+   revoked sessions are refused (`checkRevoked`) — see README "Login callback
+   hardening".
 
 **Session validation is not just JWT verification.** `centralAuth.authenticate`
 also compares the token's `tv` (token_version) against the `users` row on every
