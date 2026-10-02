@@ -252,8 +252,9 @@ function createCentralAuth(opts) {
   };
 
   // Inbound platform webhooks. The platform pushes user/org/subscription lifecycle
-  // events here to keep this app's DB in sync. All handlers are idempotent so
-  // redelivered events are safe. Body: { action, entityId, orgId, payload }.
+  // events here to keep this app's DB in sync. All handlers are idempotent —
+  // applying the same event again leaves the same state — so a redelivery is
+  // simply applied again. Body: { action, entityId, orgId, payload }.
   const platformEvents = async (req, res) => {
     // Verify the HMAC signature (x-payload-signature) against the shared key.
     const signature = req.headers['x-payload-signature'];
@@ -265,9 +266,11 @@ function createCentralAuth(opts) {
 
     const { action, orgId, entityId, payload } = req.body || {};
 
-    // Replay guard: an identical byte-for-byte redelivery always hashes to the
-    // same signature. Recording it lets a genuine platform retry still get its
-    // expected idempotent-success response without re-running the write.
+    // Byte-identical bodies are recorded and logged as `duplicate`, but still
+    // applied. Skipping them broke legitimate repeats, which are byte-identical
+    // too: a second user.removed for the same user and org (after a re-add) was
+    // dropped and the user kept access; a re-add identical to the first add left
+    // them unprovisioned; a role toggled back stuck at the old role.
     let duplicate = false;
     if (sigOk) {
       const { rows: dedupRows } = await pool.query(
@@ -281,7 +284,6 @@ function createCentralAuth(opts) {
     res.on('finish', () => fileLog('webhooks', { direction: 'in', action, orgId, phase: 'result', status: res.statusCode }));
 
     if (!sigOk) return res.status(401).json({ error: 'Invalid signature' });
-    if (duplicate) return res.json({ ok: true, duplicate: true });
     if (!action || !payload) return res.status(400).json({ error: 'action and payload are required' });
 
     try {
@@ -332,6 +334,8 @@ function createCentralAuth(opts) {
             return res.json({ ok: true, skipped: 'user already active in a different org' });
           }
 
+          // Re-provisioning an existing row can change its role or org: bump
+          // token_version then, so sessions minted under the old ones end.
           const fields = [u.id, u.email, u.name || null, u.image || null, u.phone || null, mapPlatformRole(payload.role), localOrgId];
           try {
             await pool.query(
@@ -343,7 +347,10 @@ function createCentralAuth(opts) {
                      image_url = EXCLUDED.image_url,
                      phone = EXCLUDED.phone,
                      role = EXCLUDED.role,
-                     org_id = EXCLUDED.org_id`,
+                     org_id = EXCLUDED.org_id,
+                     token_version = CASE
+                       WHEN users.role IS DISTINCT FROM EXCLUDED.role OR users.org_id IS DISTINCT FROM EXCLUDED.org_id
+                       THEN users.token_version + 1 ELSE users.token_version END`,
               fields
             );
           } catch (err) {
@@ -353,7 +360,9 @@ function createCentralAuth(opts) {
             if (err?.code !== '23505') throw err;
             const { rowCount } = await pool.query(
               `UPDATE users
-                  SET firebase_uid = $1, name = $3, image_url = $4, phone = $5, role = $6, org_id = $7
+                  SET firebase_uid = $1, name = $3, image_url = $4, phone = $5, role = $6, org_id = $7,
+                      token_version = CASE WHEN role IS DISTINCT FROM $6 OR org_id IS DISTINCT FROM $7
+                                           THEN token_version + 1 ELSE token_version END
                 WHERE email = $2`,
               fields
             );
@@ -388,8 +397,9 @@ function createCentralAuth(opts) {
               updatedOrgId = null;
             }
           }
-          // Bump token_version only when the role actually changed, invalidating
-          // any outstanding JWT for this user.
+          // Bump token_version only when the role actually changed (`role` on
+          // the right is the value before this UPDATE), invalidating any
+          // outstanding JWT for this user. A repeat of the same event is a no-op.
           const updateFields = (withEmail) => pool.query(
             `UPDATE users
                SET name = COALESCE($1, name),
@@ -397,7 +407,8 @@ function createCentralAuth(opts) {
                    phone = COALESCE($3, phone),
                    role = COALESCE($4, role),
                    email = CASE WHEN $6 THEN COALESCE($5, email) ELSE email END,
-                   token_version = CASE WHEN $4 IS NOT NULL THEN token_version + 1 ELSE token_version END
+                   token_version = CASE WHEN $4 IS NOT NULL AND $4 IS DISTINCT FROM role
+                                        THEN token_version + 1 ELSE token_version END
              WHERE firebase_uid = $7`,
             [u.name || null, u.image || null, u.phone || null, role, email, withEmail, u.id]
           );

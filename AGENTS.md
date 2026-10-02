@@ -54,8 +54,10 @@ all routes; add `requireRole('admin', ...)` for role gates.
 **Provisioning is webhook-driven, not login-driven.** The platform POSTs
 lifecycle events to `app.post('/api/internal/platform-events',
 centralAuth.handlers.platformEvents)`, HMAC-signed (`x-payload-signature`,
-verified against `PAYLOAD_SIGNATURE_KEY`) and replay-guarded via
-`processed_webhook_events` (call `centralAuth.ensureSchema()` once at startup).
+verified against `PAYLOAD_SIGNATURE_KEY`). Repeats are recorded in
+`processed_webhook_events` (call `centralAuth.ensureSchema()` once at startup)
+and logged as duplicates, but applied again — skipping them dropped
+legitimate repeats such as a second removal (README, 0.1.6).
 Actions: `org.added/updated/removed`, `user.added/updated/removed`,
 `subscription.*` (acknowledged, enforcement is yours). Handlers are idempotent.
 `user.removed` soft-detaches (`org_id = NULL`) rather than deleting. Role

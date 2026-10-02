@@ -1,6 +1,6 @@
 {
   "name": "@alphalake/platform-kit",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Shared Alphalake central-auth backend/frontend plumbing and UI theme tokens, for reuse across Alphalake platform modules.",
   "license": "UNLICENSED",
   "private": true,
@@ -42,6 +42,7 @@
     "clsx": "^2.1.1",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.400.0",
+    "pg": "^8.23.1",
     "radix-ui": "^1.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

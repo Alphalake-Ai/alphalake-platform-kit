@@ -6,10 +6,10 @@ platform modules. Install as a git dependency (no registry needed for
 internal use):
 
 ```bash
-npm install "git+https://github.com/Alphalake-Ai/alphalake-platform-kit.git#v0.1.5"
+npm install "git+https://github.com/Alphalake-Ai/alphalake-platform-kit.git#v0.1.6"
 ```
 
-Pin to a tag (`#v0.1.5`), not `main`, for reproducible builds.
+Pin to a tag (`#v0.1.6`), not `main`, for reproducible builds.
 
 > **License:** proprietary — see [`LICENSE`](LICENSE). Use is restricted to
 > Alphalake and its projects; the repo is public so deployments can install
@@ -175,6 +175,35 @@ Prisma), add both tables to it so the tool doesn't treat them as drift.
 - **Login state echo.** If myaccount's `continue` URL carries an `ls` value
   (the client's `loginState` option), the callback passes it back next to
   `_t`. Harmless for clients that don't use it.
+
+### Platform webhooks: repeats are applied (0.1.6)
+
+The webhook handlers are idempotent, so an event that arrives again is
+applied again rather than skipped. In 0.1.5 and earlier a body byte-identical to one
+seen in the last 90 days was dropped, and legitimate repeats are
+byte-identical too: a second `user.removed` for the same user and org (after a
+re-add) was ignored and **the user kept access**; a re-add identical to the
+first add left them unprovisioned; a role toggled back stuck at the old role.
+Repeats are still recorded in `processed_webhook_events` and logged as
+`duplicate: true`.
+
+- `token_version` (which ends the user's sessions) is bumped only when a role
+  or org actually changes, so a redelivered `user.updated`/`user.added`
+  doesn't log anyone out. `user.added` re-provisioning an existing row with a
+  different role now bumps it too (it didn't before).
+- `onUserAccessChanged` can now run again for the same event, so keep it
+  idempotent.
+- Trade-offs, since a repeat can't be told apart from a resend without a
+  platform-signed timestamp or event id:
+  - There's no replay guard. Someone holding a captured signed request could
+    resend it; restrict the endpoint to the platform's egress IPs where you can.
+  - A platform *retry* that arrives after a later event is applied out of
+    order (e.g. a timed-out `user.added`, then `user.removed`, then the add's
+    retry re-adds the user). The old skip happened to block that. Fine while
+    the platform doesn't retry late; revisit if it starts to.
+
+`TEST_DATABASE_URL=<postgres url> npm test` runs these scenarios against a
+real database (in a throwaway schema).
 
 ## `@alphalake/platform-kit/client`
 
@@ -346,6 +375,7 @@ npm install
 npm run typecheck   # tsc --noEmit over src/client + src/ui
 npm run build        # tsup -> dist/{client,ui}/index.{mjs,d.mts}
 npm test             # node --test test/ (Node >= 22.18: imports the .ts client source directly)
+                     # TEST_DATABASE_URL=<postgres url> also runs the webhook tests against Postgres
 ```
 
 `src/server` ships unbuilt as plain CommonJS — no build step, run directly by
