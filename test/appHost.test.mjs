@@ -36,6 +36,9 @@ function setLocation(hash) {
       replaceState: (_s, _t, url) => {
         const i = url.indexOf('#');
         location.hash = i === -1 ? '' : url.slice(i);
+        const beforeHash = i === -1 ? url : url.slice(0, i);
+        const q = beforeHash.indexOf('?');
+        location.search = q === -1 ? '' : beforeHash.slice(q);
       },
     },
   };
@@ -131,6 +134,33 @@ test('no _t in the hash is a no-op', () => {
   setLocation('#/repeats?auth_error=not_provisioned');
   assert.equal(h.consumeTokenFromHash(), 'none');
   assert.equal(window.location.hash, '#/repeats?auth_error=not_provisioned');
+});
+
+test('the logout link carries the same login state, so the sign-in after it is accepted', () => {
+  const h = host();
+  h.redirectToCentralLogout();
+  // myaccount signs out, then shows its sign-in page with this same `continue`.
+  const state = stateIn(navigatedTo);
+  assert.match(state, /^[0-9a-f]{48}$/);
+  assert.equal(stateIn(h.centralLoginLink()), state);
+
+  setLocation(`#/?_t=jwt-3&ls=${state}`);
+  assert.equal(h.consumeTokenFromHash(), 'accepted');
+  assert.equal(storedToken, 'jwt-3');
+});
+
+test('without loginState the logout link is unchanged', () => {
+  host(false).redirectToCentralLogout();
+  assert.equal(new URL(navigatedTo).searchParams.get('continue'), 'https://hub.example');
+});
+
+test('a ?ls= left in the address bar by the platform redirect is removed', () => {
+  const h = host();
+  setLocation('#/repeats');
+  window.location.search = '?ls=abc&keep=1';
+  assert.equal(h.consumeTokenFromHash(), 'none');
+  assert.equal(window.location.search, '?keep=1');
+  assert.equal(window.location.hash, '#/repeats');
 });
 
 test('a revoked session is sent through the platform logout once per tab', () => {

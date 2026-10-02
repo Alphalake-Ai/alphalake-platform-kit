@@ -6,10 +6,10 @@ platform modules. Install as a git dependency (no registry needed for
 internal use):
 
 ```bash
-npm install "git+https://github.com/Alphalake-Ai/alphalake-platform-kit.git#v0.1.6"
+npm install "git+https://github.com/Alphalake-Ai/alphalake-platform-kit.git#v0.1.7"
 ```
 
-Pin to a tag (`#v0.1.6`), not `main`, for reproducible builds.
+Pin to a tag (`#v0.1.7`), not `main`, for reproducible builds.
 
 > **License:** proprietary — see [`LICENSE`](LICENSE). Use is restricted to
 > Alphalake and its projects; the repo is public so deployments can install
@@ -263,8 +263,19 @@ tab becomes `auth_error=login_state_mismatch` instead of a redirect loop.
 
 - **Roll out the backend first.** A client with `loginState` against a backend
   on kit < 0.1.5 refuses every login.
+- **Use kit >= 0.1.7 on the client.** myaccount only sends a token to the
+  callback from its sign-in form, and its logout goes on to that form with the
+  logout's `continue` (its sign-in page skips the callback entirely when it
+  already has a session cookie, redirecting straight to `continue`). So the
+  logout link must carry `ls` too: in 0.1.5/0.1.6 it didn't, and every sign-in
+  after a logout — including the gate's forced one — was refused.
 - Not compatible with the `goToApp` marketing-host handoff (it carries `_t`
   across origins, which can't share the tab's state).
+
+`CentralAuthGate` forces one platform logout per tab when the platform hands
+the tab back without a session; if that happens again it stops with
+`auth_error=sso_declined` instead of looping (the guard was ineffective before
+0.1.7: `redirectToCentralLogout` cleared the marker the gate had just set).
 
 Call `appHost.recoverFromAuthError(code)` before showing an `auth_error`
 (`AuthErrorToast` does): for `session_revoked` it sends the user through the

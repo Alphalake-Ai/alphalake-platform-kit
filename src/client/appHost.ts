@@ -94,13 +94,16 @@ export function createAppHost(config: AppHostConfig) {
   // Ends the central session too. Clearing the local JWT alone isn't a logout —
   // the platform's session cookie is still valid, so a login redirect would
   // bounce the user straight back in. This hits the platform logout, which
-  // clears that cookie and returns to `continue`.
+  // clears that cookie and goes on to the platform's sign-in page with the
+  // same `continue` — so with `loginState`, that `continue` carries this tab's
+  // `ls` too, or the sign-in that follows would come back without it.
   const redirectToCentralLogout = (): void => {
     if (typeof window === 'undefined') return;
     sessionStorage.removeItem(AUTH_BLOCKED_KEY);
     sessionStorage.removeItem(SSO_ATTEMPTED_KEY);
     sessionStorage.removeItem(SSO_LOGOUT_RETRIED_KEY);
-    const continueUrl = `${window.location.origin}${prefixFromApiBase()}`;
+    let continueUrl = `${window.location.origin}${prefixFromApiBase()}`;
+    if (config.loginState) continueUrl += `?ls=${loginStateValue()}`;
     window.location.href = `${config.centralLogoutUrl}?continue=${encodeURIComponent(continueUrl)}`;
   };
 
@@ -184,6 +187,14 @@ export function createAppHost(config: AppHostConfig) {
   // second refusal becomes auth_error=login_state_mismatch rather than a loop.
   const consumeTokenFromHash = (): 'none' | 'accepted' | 'refused' => {
     if (typeof window === 'undefined') return 'none';
+    // The platform's sign-in page, when it already has a session, redirects
+    // straight to `continue` — leaving `?ls=` in the address bar. Drop it.
+    const search = new URLSearchParams(window.location.search);
+    if (search.has('ls')) {
+      search.delete('ls');
+      const query = search.toString();
+      window.history.replaceState(null, '', window.location.pathname + (query ? `?${query}` : '') + window.location.hash);
+    }
     const hash = window.location.hash;
     const queryIdx = hash.indexOf('?');
     if (queryIdx === -1) return 'none';

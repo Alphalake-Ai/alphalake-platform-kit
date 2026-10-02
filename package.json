@@ -1,6 +1,6 @@
 {
   "name": "@alphalake/platform-kit",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Shared Alphalake central-auth backend/frontend plumbing and UI theme tokens, for reuse across Alphalake platform modules.",
   "license": "UNLICENSED",
   "private": true,

@@ -14,6 +14,7 @@ export interface CentralAuthGateProps {
 // Mount once near the root, alongside the router.
 export const CentralAuthGate: React.FC<CentralAuthGateProps> = ({ appHost, isAuthenticated, publicPaths = [] }) => {
   const location = useLocation();
+  const navigate = useNavigate();
   useEffect(() => {
     if (!appHost.isCentralAuth || isAuthenticated()) return;
     if (sessionStorage.getItem(appHost.AUTH_BLOCKED_KEY)) return;
@@ -26,10 +27,15 @@ export const CentralAuthGate: React.FC<CentralAuthGateProps> = ({ appHost, isAut
     // hand it to this one. Straight back to login would just replay the same
     // silent bounce, so force a real platform logout first — that clears the
     // stale cookie server-side and the next login attempt has to be a real one.
+    // Only once per tab: if it happens again, stop and say so rather than loop.
     if (sessionStorage.getItem(appHost.SSO_ATTEMPTED_KEY)) {
-      if (sessionStorage.getItem(appHost.SSO_LOGOUT_RETRIED_KEY)) return;
-      sessionStorage.setItem(appHost.SSO_LOGOUT_RETRIED_KEY, '1');
+      if (sessionStorage.getItem(appHost.SSO_LOGOUT_RETRIED_KEY)) {
+        navigate(`${location.pathname}?auth_error=sso_declined`, { replace: true });
+        return;
+      }
       appHost.redirectToCentralLogout();
+      // After the call: redirectToCentralLogout clears this marker.
+      sessionStorage.setItem(appHost.SSO_LOGOUT_RETRIED_KEY, '1');
       return;
     }
     appHost.redirectToCentralLogin();
@@ -52,6 +58,7 @@ const DEFAULT_AUTH_ERROR_MESSAGES: Record<string, string> = {
   account_disabled: 'This account has been disabled. Please contact your administrator.',
   session_revoked: 'Your session has ended. Please sign in again.',
   login_state_mismatch: "Sign-in couldn't be completed in this tab. Please try signing in again.",
+  sso_declined: "We couldn't sign you in automatically. Please sign out of your Alphalake account and sign in again.",
 };
 
 // Surfaces central-auth failures the callback route signals via ?auth_error=<code>,
