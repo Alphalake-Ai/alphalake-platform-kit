@@ -90,10 +90,38 @@ async function alphalakeResetPassword(resetToken, newPassword, { alphalakeIntern
   if (!res.ok || !body.success) throw new Error(`reset-password failed (${res.status})`);
 }
 
+// Read-only lookups on the platform's internal API (same host/auth as the
+// password-reset calls above). Both return the envelope's `data` array and
+// throw on anything else. Note the platform answers an unknown org/user with
+// 200 and an empty list, so callers must treat [] as "nothing", not "unknown".
+async function alphalakeInternalGet(path, { alphalakeInternalApiUrl, alphalakeInternalApiKey, timeoutMs = 10000 }) {
+  if (!alphalakeInternalApiUrl) throw new Error('alphalakeInternalApiUrl is not configured');
+  const res = await fetch(`${alphalakeInternalApiUrl.replace(/\/$/, '')}/platform/api/internal/${path}`, {
+    headers: { 'x-api-key': alphalakeInternalApiKey || '' },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || !body.success || !Array.isArray(body.data)) {
+    throw new Error(`Platform GET ${path} failed (${res.status})`);
+  }
+  return body.data;
+}
+
+// The org's subscriptions, one per entity it holds at any level (cloud,
+// workspace, hub): [{ entityId, paused, expiresAt, entity: { masterEntityId, type, … } }].
+const alphalakeGetOrgSubscriptions = (externalOrgId, config) =>
+  alphalakeInternalGet(`org/${encodeURIComponent(externalOrgId)}/subscriptions`, config);
+
+// The entities (hubs) a user is assigned to: [{ id, masterEntityId, type, orgId, … }].
+const alphalakeGetUserEntities = (firebaseUid, config) =>
+  alphalakeInternalGet(`user/${encodeURIComponent(firebaseUid)}/entities`, config);
+
 module.exports = {
   generatePayloadSignature,
   verifyWebhookSignature,
   postModuleEvent,
   alphalakeGetPasswordResetToken,
   alphalakeResetPassword,
+  alphalakeGetOrgSubscriptions,
+  alphalakeGetUserEntities,
 };

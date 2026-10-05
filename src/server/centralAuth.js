@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { getFirebaseAuth } = require('./firebase');
-const { generatePayloadSignature } = require('./platformClient');
+const { generatePayloadSignature, alphalakeGetUserEntities } = require('./platformClient');
 
 // Builds the Alphalake central-auth backend integration: session JWTs, the
 // Firebase login callback, the inbound platform-events webhook (org/user
@@ -13,6 +13,14 @@ const { generatePayloadSignature } = require('./platformClient');
 //   organisations: id, name, description, external_id UNIQUE, platform_entity_id
 //   processed_webhook_events: signature TEXT PRIMARY KEY, created_at (see ensureSchema)
 //   used_login_tokens: token_hash TEXT PRIMARY KEY, first_used_at, expires_at (see ensureSchema)
+//   user_hub_roles (multi-hub mode only): user_id, hub, role, PRIMARY KEY (user_id, hub)
+//
+// Multi-hub mode (`hubs` option): one backend serving several platform hubs.
+// Each hub's webhook URL is its own path (handlers.platformEventsFor(hub)),
+// because the webhook body doesn't say which hub it's about. A user's
+// assignment to a hub and their role in it live in user_hub_roles, and
+// users.role is left alone. A user is detached from their org only once they
+// hold no hub at all.
 
 // The `ls` login-state nonce the client puts in myaccount's `continue` URL
 // (createAppHost's `loginState` option). Opaque here: only echoed back.
@@ -61,9 +69,25 @@ function createCentralAuth(opts) {
     // log being redeemed later. Repeats within this window still pass, so a
     // browser or load-balancer retry of the same callback isn't refused.
     loginTokenReuseGraceSeconds = 60,
+    // Multi-hub mode: { appHubName: platformMasterEntityId }, e.g.
+    // { repeats: 'rp-hub', cardex: 'meds-reader' }. Needs the platform's
+    // internal API (alphalakeInternalApiUrl/Key) for the login-time check.
+    hubs = null,
+    alphalakeInternalApiUrl,
+    alphalakeInternalApiKey,
+    // Optional createEntitlements() result; its cache is cleared on org.* and
+    // subscription.* webhooks.
+    entitlements = null,
   } = opts;
 
   if (!jwtSecret) throw new Error('createCentralAuth: jwtSecret is required');
+  if (hubs && (typeof hubs !== 'object' || Object.keys(hubs).length === 0)) {
+    throw new Error('createCentralAuth: hubs must map hub names to platform masterEntityIds');
+  }
+  if (hubs && !alphalakeInternalApiUrl) {
+    throw new Error('createCentralAuth: alphalakeInternalApiUrl is required with hubs');
+  }
+  const platformConfig = { alphalakeInternalApiUrl, alphalakeInternalApiKey };
   // If unset, generatePayloadSignature() would sign/verify with an empty-string
   // key — a well-known constant any caller could reproduce, letting an attacker
   // forge platform webhooks. Fail closed rather than start with a forgeable endpoint.
@@ -131,6 +155,101 @@ function createCentralAuth(opts) {
       )
     `);
     await pool.query(`DELETE FROM used_login_tokens WHERE expires_at < NOW()`);
+    if (hubs) {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_hub_roles (
+          user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          hub TEXT NOT NULL,
+          role TEXT NOT NULL,
+          created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (user_id, hub)
+        )
+      `);
+    }
+  }
+
+  // Multi-hub user.added: provisions the user into the org without touching
+  // users.role (roles are per hub). Moving them to another org ends their
+  // sessions. Returns the local users.id.
+  async function upsertHubMember(u, localOrgId) {
+    const fields = [u.id, u.email, u.name || null, u.image || null, u.phone || null, localOrgId];
+    try {
+      const { rows } = await pool.query(
+        `INSERT INTO users (firebase_uid, email, name, image_url, phone, org_id, role)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (firebase_uid) DO UPDATE
+           SET email = EXCLUDED.email,
+               name = EXCLUDED.name,
+               image_url = EXCLUDED.image_url,
+               phone = EXCLUDED.phone,
+               org_id = EXCLUDED.org_id,
+               token_version = CASE WHEN users.org_id IS DISTINCT FROM EXCLUDED.org_id
+                                    THEN users.token_version + 1 ELSE users.token_version END
+         RETURNING id`,
+        [...fields, defaultRole]
+      );
+      return rows[0].id;
+    } catch (err) {
+      // Email already on another row: adopt it, as the single-hub path does.
+      if (err?.code !== '23505') throw err;
+      const { rows } = await pool.query(
+        `UPDATE users
+            SET firebase_uid = $1, name = $3, image_url = $4, phone = $5, org_id = $6,
+                token_version = CASE WHEN org_id IS DISTINCT FROM $6 THEN token_version + 1 ELSE token_version END
+          WHERE email = $2
+          RETURNING id`,
+        fields
+      );
+      if (rows.length === 0) throw err;
+      console.warn(`[CentralAuth] user.added: linked existing account ${u.email} to uid ${u.id}`);
+      return rows[0].id;
+    }
+  }
+
+  // Multi-hub: sets a user's role in one hub. Returns true if anything changed.
+  // `create: false` only changes an existing assignment (user.updated never
+  // grants a hub). Changing an existing role ends the user's sessions, as a
+  // single-hub role change does; a new assignment only grants, so it doesn't.
+  async function setHubRole(userId, hub, role, { create }) {
+    const { rows: prev } = await pool.query('SELECT role FROM user_hub_roles WHERE user_id = $1 AND hub = $2', [userId, hub]);
+    if (prev.length === 0 && !create) return false;
+    if (prev[0]?.role === role) return false;
+    await pool.query(
+      `INSERT INTO user_hub_roles (user_id, hub, role) VALUES ($1, $2, $3)
+       ON CONFLICT (user_id, hub) DO UPDATE SET role = EXCLUDED.role, updated_at = NOW()`,
+      [userId, hub, role]
+    );
+    if (prev.length > 0) await pool.query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [userId]);
+    return true;
+  }
+
+  // Multi-hub login check: drops hub assignments the platform no longer lists
+  // for the user in their org (covers a user.removed that never arrived), then
+  // says whether any hub is left. Never adds one: the platform's list carries
+  // no role, so only user.added grants. If the platform can't be reached the
+  // local assignments stand.
+  async function syncHubsAtLogin(user, uid) {
+    const { rows: orgRows } = await pool.query('SELECT external_id FROM organisations WHERE id = $1', [user.org_id]);
+    const externalOrgId = orgRows[0]?.external_id ?? null;
+    try {
+      const entities = await alphalakeGetUserEntities(uid, platformConfig);
+      const assigned = Object.keys(hubs).filter((hub) =>
+        entities.some((e) => e?.masterEntityId === hubs[hub] && e?.orgId === externalOrgId)
+      );
+      const { rowCount } = await pool.query(
+        'DELETE FROM user_hub_roles WHERE user_id = $1 AND NOT (hub = ANY($2::text[]))',
+        [user.id, assigned]
+      );
+      if (rowCount > 0) {
+        await pool.query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [user.id]);
+        fileLog('user-actions', { event: 'hub_access_pruned', userId: user.id, kept: assigned });
+      }
+    } catch (err) {
+      console.warn(`[CentralAuth] callback: couldn't check hub assignments for uid ${uid}: ${err?.message}`);
+    }
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM user_hub_roles WHERE user_id = $1', [user.id]);
+    return rows[0].n > 0;
   }
 
   // Records a Firebase ID token's first use. False once it was first used more
@@ -196,6 +315,9 @@ function createCentralAuth(opts) {
         // user.added webhook), or detached from their org by user.removed.
         return res.redirect(`${publicAppUrl}/#/?auth_error=not_provisioned`);
       }
+      if (hubs && !(await syncHubsAtLogin(rows[0], uid))) {
+        return loginFailed('no_hub_access', 'no hub assignment left');
+      }
 
       const fbUser = await getFirebaseAuth().getUser(uid);
       const { rows: updated } = await pool.query(
@@ -255,7 +377,8 @@ function createCentralAuth(opts) {
   // events here to keep this app's DB in sync. All handlers are idempotent —
   // applying the same event again leaves the same state — so a redelivery is
   // simply applied again. Body: { action, entityId, orgId, payload }.
-  const platformEvents = async (req, res) => {
+  // `hub` is null for a single-hub app, or the hub whose URL this is.
+  const makePlatformEvents = (hub) => async (req, res) => {
     // Verify the HMAC signature (x-payload-signature) against the shared key.
     const signature = req.headers['x-payload-signature'];
     const expected = generatePayloadSignature(req.body, payloadSignatureKey);
@@ -280,8 +403,9 @@ function createCentralAuth(opts) {
       duplicate = dedupRows.length === 0;
     }
 
-    fileLog('webhooks', { direction: 'in', action, orgId, entityId, sigOk, duplicate, payload });
-    res.on('finish', () => fileLog('webhooks', { direction: 'in', action, orgId, phase: 'result', status: res.statusCode }));
+    const hubTag = hub ? { hub } : {};
+    fileLog('webhooks', { direction: 'in', ...hubTag, action, orgId, entityId, sigOk, duplicate, payload });
+    res.on('finish', () => fileLog('webhooks', { direction: 'in', ...hubTag, action, orgId, phase: 'result', status: res.statusCode }));
 
     if (!sigOk) return res.status(401).json({ error: 'Invalid signature' });
     if (!action || !payload) return res.status(400).json({ error: 'action and payload are required' });
@@ -301,6 +425,7 @@ function createCentralAuth(opts) {
                    platform_entity_id = COALESCE(EXCLUDED.platform_entity_id, organisations.platform_entity_id)`,
             [org.name || 'Organisation', org.description || null, org.id, entityId || null]
           );
+          entitlements?.invalidate(org.id);
           break;
         }
 
@@ -332,6 +457,13 @@ function createCentralAuth(opts) {
           if (conflict) {
             console.warn(`[CentralAuth] user.added: refusing to move ${u.email} into org ${localOrgId} — already active in a different org. Send user.removed first if this is an intentional transfer.`);
             return res.json({ ok: true, skipped: 'user already active in a different org' });
+          }
+
+          if (hub) {
+            const userId = await upsertHubMember(u, localOrgId);
+            await setHubRole(userId, hub, mapPlatformRole(payload.role), { create: true });
+            await onUserAccessChanged(localOrgId);
+            break;
           }
 
           // Re-provisioning an existing row can change its role or org: bump
@@ -387,16 +519,22 @@ function createCentralAuth(opts) {
           // already left. Profile-only fields (name/image/phone) are harmless
           // and always applied regardless of org.
           let updatedOrgId = null;
+          let targetUserId = null;
           if (role !== null || email !== null) {
             updatedOrgId = await resolveLocalOrgId(orgId);
-            const { rows: targetRows } = await pool.query('SELECT org_id FROM users WHERE firebase_uid = $1', [u.id]);
+            const { rows: targetRows } = await pool.query('SELECT id, org_id FROM users WHERE firebase_uid = $1', [u.id]);
             if (!targetRows[0] || targetRows[0].org_id !== updatedOrgId) {
               console.warn(`[CentralAuth] user.updated: ignoring role/email change for uid ${u.id} — event's org doesn't match the user's current org.`);
               role = null;
               email = null;
               updatedOrgId = null;
+            } else {
+              targetUserId = targetRows[0].id;
             }
           }
+          // Multi-hub: the role belongs to this hub's assignment, not users.role.
+          const hubRole = hub ? role : null;
+          if (hub) role = null;
           // Bump token_version only when the role actually changed (`role` on
           // the right is the value before this UPDATE), invalidating any
           // outstanding JWT for this user. A repeat of the same event is a no-op.
@@ -423,6 +561,7 @@ function createCentralAuth(opts) {
             await updateFields(false);
             email = null;
           }
+          if (hubRole !== null && targetUserId) await setHubRole(targetUserId, hub, hubRole, { create: false });
           if (updatedOrgId) await onUserAccessChanged(updatedOrgId);
           break;
         }
@@ -438,6 +577,33 @@ function createCentralAuth(opts) {
           // whatever org they're ACTUALLY in, even an unrelated one.
           const u = payload.user || {};
           const localOrgId = await resolveLocalOrgId(orgId);
+
+          if (hub) {
+            // Multi-hub: drop this hub only. The user keeps their other hubs,
+            // and is detached from the org once none are left.
+            const { rows: members } = await pool.query(
+              'SELECT id FROM users WHERE firebase_uid = $1 AND org_id = $2',
+              [u.id, localOrgId]
+            );
+            if (members.length === 0) {
+              console.warn(`[CentralAuth] user.removed (${hub}): no-op for uid ${u.id} — not currently a member of the issuing org.`);
+              break;
+            }
+            const userId = members[0].id;
+            const { rowCount } = await pool.query('DELETE FROM user_hub_roles WHERE user_id = $1 AND hub = $2', [userId, hub]);
+            const { rows: left } = await pool.query('SELECT count(*)::int AS n FROM user_hub_roles WHERE user_id = $1', [userId]);
+            if (left[0].n === 0) {
+              await pool.query(
+                'UPDATE users SET org_id = NULL, role = $2, token_version = token_version + 1 WHERE id = $1',
+                [userId, defaultRole]
+              );
+            } else if (rowCount > 0) {
+              await pool.query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [userId]);
+            }
+            await onUserAccessChanged(localOrgId);
+            break;
+          }
+
           const { rows: detached } = await pool.query(
             `UPDATE users SET org_id = NULL, role = $3, token_version = token_version + 1
               WHERE firebase_uid = $1 AND org_id = $2 RETURNING id`,
@@ -458,13 +624,16 @@ function createCentralAuth(opts) {
             'UPDATE organisations SET external_id = NULL, platform_entity_id = NULL WHERE external_id = $1',
             [org.id || orgId]
           );
+          entitlements?.invalidate(org.id || orgId);
           break;
         }
 
         case 'subscription.added':
         case 'subscription.updated':
         case 'subscription.removed':
-          // Subscription enforcement is left to the host app — acknowledge and drop.
+          // Subscription enforcement is left to the host app (see
+          // createEntitlements); only its cached answer for the org is cleared.
+          entitlements?.invalidate(orgId);
           break;
 
         default:
@@ -478,13 +647,22 @@ function createCentralAuth(opts) {
     }
   };
 
+  const platformEvents = makePlatformEvents(null);
+  // Multi-hub: the webhook handler for one hub's URL.
+  const platformEventsFor = (hub) => {
+    if (!hubs || !Object.prototype.hasOwnProperty.call(hubs, hub)) {
+      throw new Error(`platformEventsFor: unknown hub "${hub}"`);
+    }
+    return makePlatformEvents(hub);
+  };
+
   return {
     authenticate,
     signSession,
     mapPlatformRole,
     resolveLocalOrgId,
     ensureSchema,
-    handlers: { callback, refreshProfile, platformEvents },
+    handlers: { callback, refreshProfile, platformEvents, platformEventsFor },
   };
 }
 

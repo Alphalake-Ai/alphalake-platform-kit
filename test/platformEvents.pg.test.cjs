@@ -120,3 +120,140 @@ describe('platform webhooks (Postgres)', { skip: !url && 'TEST_DATABASE_URL not 
     assert.equal((await sam()).role, 'viewer');
   });
 });
+
+describe('multi-hub platform webhooks (Postgres)', { skip: !url && 'TEST_DATABASE_URL not set' }, () => {
+  const schema = `kit_test_${crypto.randomBytes(4).toString('hex')}`;
+  let pool;
+  let auth;
+  let invalidated;
+
+  before(async () => {
+    const { Pool } = require('pg');
+    const admin = new Pool({ connectionString: url, max: 1 });
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    await admin.end();
+    pool = new Pool({ connectionString: url, max: 2, options: `-c search_path=${schema}` });
+    await pool.query(`
+      CREATE TABLE organisations (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name TEXT NOT NULL, description TEXT,
+        external_id TEXT UNIQUE, platform_entity_id TEXT
+      )`);
+    await pool.query(`
+      CREATE TABLE users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email TEXT UNIQUE NOT NULL, name TEXT, role TEXT NOT NULL DEFAULT 'viewer',
+        org_id UUID REFERENCES organisations(id), firebase_uid TEXT UNIQUE,
+        image_url TEXT, phone TEXT, token_version INT NOT NULL DEFAULT 0, last_login_at TIMESTAMPTZ
+      )`);
+    invalidated = [];
+    auth = createCentralAuth({
+      pool,
+      jwtSecret: 'x',
+      payloadSignatureKey: KEY,
+      roles: ['admin', 'staff', 'viewer'],
+      publicAppUrl: 'https://hub.example',
+      hubs: { repeats: 'rp-hub', cardex: 'meds-reader' },
+      alphalakeInternalApiUrl: 'https://platform.example',
+      entitlements: { invalidate: (org) => invalidated.push(org) },
+    });
+    await auth.ensureSchema();
+  });
+
+  after(async () => {
+    if (!pool) return;
+    await pool.query(`DROP SCHEMA ${schema} CASCADE`);
+    await pool.end();
+  });
+
+  async function send(hub, body) {
+    const res = {
+      statusCode: 200,
+      status(code) { this.statusCode = code; return this; },
+      json(b) { this.body = b; return this; },
+      on() {},
+    };
+    await auth.handlers.platformEventsFor(hub)({ headers: { 'x-payload-signature': generatePayloadSignature(body, KEY) }, body }, res);
+    assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+    return res.body;
+  }
+
+  const added = (role, uid = UID, email = 'sam@example.com') => ({ action: 'user.added', orgId: ORG, entityId: 'e', payload: { role, user: { id: uid, email, name: 'Sam' } } });
+  const removed = (uid = UID) => ({ action: 'user.removed', orgId: ORG, entityId: 'e', payload: { user: { id: uid } } });
+  const updated = (role) => ({ action: 'user.updated', orgId: ORG, entityId: 'e', payload: { role, user: { id: UID } } });
+
+  async function state(uid = UID) {
+    const { rows } = await pool.query(
+      `SELECT u.role, u.token_version AS tv, o.external_id AS org,
+              COALESCE((SELECT json_object_agg(h.hub, h.role) FROM user_hub_roles h WHERE h.user_id = u.id), '{}') AS hubs
+         FROM users u LEFT JOIN organisations o ON o.id = u.org_id WHERE firebase_uid = $1`,
+      [uid]
+    );
+    return rows[0];
+  }
+
+  test('each hub URL grants its own hub and role; users.role is untouched', async () => {
+    await send('repeats', added('admin'));
+    await send('cardex', added('viewer'));
+    const s = await state();
+    assert.deepEqual(s.hubs, { repeats: 'admin', cardex: 'viewer' });
+    assert.equal(s.role, 'viewer'); // the default, never the hub role
+    assert.equal(s.org, ORG);
+    assert.equal(s.tv, 0); // new assignments only grant
+  });
+
+  test('a role change on one hub leaves the other alone and ends sessions', async () => {
+    const before = await state();
+    await send('cardex', updated('staff'));
+    let s = await state();
+    assert.deepEqual(s.hubs, { repeats: 'admin', cardex: 'staff' });
+    assert.equal(s.tv, before.tv + 1);
+    await send('cardex', added('staff')); // same role again: no-op
+    s = await state();
+    assert.equal(s.tv, before.tv + 1);
+  });
+
+  test('user.updated never grants a hub the user is not on', async () => {
+    await send('cardex', removed());
+    await send('cardex', updated('admin'));
+    assert.deepEqual((await state()).hubs, { repeats: 'admin' });
+  });
+
+  test('removal from one hub keeps the other; removing the last detaches', async () => {
+    await send('cardex', added('staff'));
+    const before = await state();
+    await send('cardex', removed());
+    let s = await state();
+    assert.deepEqual(s.hubs, { repeats: 'admin' });
+    assert.equal(s.org, ORG);
+    assert.equal(s.tv, before.tv + 1);
+
+    await send('cardex', removed()); // repeat: no-op
+    assert.equal((await state()).tv, before.tv + 1);
+
+    await send('repeats', removed());
+    s = await state();
+    assert.deepEqual(s.hubs, {});
+    assert.equal(s.org, null);
+    assert.equal(s.tv, before.tv + 2);
+  });
+
+  test('a re-add after detaching restores the user to the org', async () => {
+    await send('cardex', added('viewer'));
+    const s = await state();
+    assert.deepEqual(s.hubs, { cardex: 'viewer' });
+    assert.equal(s.org, ORG);
+  });
+
+  test('an unknown platform role maps to the default', async () => {
+    await send('repeats', added('SUPERUSER', 'fb-uid-2', 'kim@example.com'));
+    assert.deepEqual((await state('fb-uid-2')).hubs, { repeats: 'viewer' });
+  });
+
+  test('org and subscription events clear the entitlements cache', async () => {
+    invalidated.length = 0;
+    await send('repeats', { action: 'subscription.updated', orgId: ORG, entityId: 'e', payload: {} });
+    await send('repeats', { action: 'org.updated', orgId: ORG, entityId: 'e', payload: { org: { id: ORG, name: 'Org' } } });
+    assert.deepEqual(invalidated, [ORG, ORG]);
+  });
+});

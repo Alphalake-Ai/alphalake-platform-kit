@@ -205,6 +205,74 @@ Repeats are still recorded in `processed_webhook_events` and logged as
 `TEST_DATABASE_URL=<postgres url> npm test` runs these scenarios against a
 real database (in a throwaway schema).
 
+### Multi-hub backends (0.2.0)
+
+One backend can serve several platform hubs, e.g. Repeats Hub and Meds Reader
+Hub. A user can then be on one hub and not another, and have a different role
+in each. Single-hub apps are unaffected: leave `hubs` out.
+
+```js
+const hubs = { repeats: 'rp-hub', cardex: 'meds-reader' }; // your names -> platform masterEntityIds
+const platformApi = {
+  alphalakeInternalApiUrl: process.env.ALPHALAKE_INTERNAL_API_URL,
+  alphalakeInternalApiKey: process.env.ALPHALAKE_INTERNAL_API_KEY,
+};
+
+const entitlements = createEntitlements({ hubs, ...platformApi }); // ttlMs: default 5 min
+const centralAuth = createCentralAuth({ /* …as above… */ hubs, ...platformApi, entitlements });
+
+// One webhook URL per hub: set each hub's URL on the platform to its own path.
+app.post('/api/internal/platform-events/repeats', centralAuth.handlers.platformEventsFor('repeats'));
+app.post('/api/internal/platform-events/cardex', centralAuth.handlers.platformEventsFor('cardex'));
+```
+
+- **Hub assignments and roles come from the webhooks.** The platform's
+  webhook body doesn't say which hub it is about, so the URL does.
+  - `user.added` on a hub's path assigns the user to that hub with that role.
+  - `user.updated` changes the role on that hub only, and never assigns a hub.
+  - `user.removed` drops that hub only. The user is detached from the org, as
+    before, once they hold no hub.
+  - Assignments live in `user_hub_roles`. `ensureSchema()` creates the table;
+    add it to your migrations too. `users.role` is left at `defaultRole` and
+    isn't used.
+  - A changed role ends the user's sessions (`token_version`), as before. A new
+    assignment only grants access, so it doesn't.
+- **The login check.** At login the callback asks the platform which hubs the
+  user is assigned to (`/user/{uid}/entities`, in their own org).
+  - It drops local assignments the platform no longer lists, which covers a
+    lost `user.removed`.
+  - It never adds any, because that list carries no role.
+  - A user left with no hub is refused with `auth_error=no_hub_access`.
+  - If the platform can't be reached, the local assignments stand.
+- **Org subscriptions.** `entitlements.orgHubs(externalOrgId)` returns the
+  app's hubs the org subscribes to: any subscription for that masterEntityId
+  counts, and `paused`/`expiresAt` are not checked.
+  - `entitlements.hubEntityId(externalOrgId, hub)` gives the org's entity id
+    for a hub, for `postModuleEvent`'s `platform_entity_id`.
+  - Answers are cached per org. `org.*` and `subscription.*` webhooks clear
+    the org's cached answer.
+  - A failed lookup is thrown and not cached.
+  - The platform answers an unknown org with an empty list, so that reads as
+    "no hubs".
+- **What the kit does not do.** Gating routes and checking roles per hub is
+  your app's job: a user may use a hub when they have a `user_hub_roles` row
+  for it **and** their org subscribes to it.
+
+```sql
+CREATE TABLE IF NOT EXISTS user_hub_roles (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  hub TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, hub)
+);
+```
+
+The platform lookups are also exported on their own, as
+`alphalakeGetOrgSubscriptions(externalOrgId, platformApi)` and
+`alphalakeGetUserEntities(firebaseUid, platformApi)`.
+
 ## `@alphalake/platform-kit/client`
 
 ```ts

@@ -1,5 +1,6 @@
 const { createCentralAuth } = require('./centralAuth');
 const { createReviewLink } = require('./reviewLink');
+const { createEntitlements } = require('./entitlements');
 const { getFirebaseAuth, buildFirebaseCredential } = require('./firebase');
 const {
   generatePayloadSignature,
@@ -7,6 +8,8 @@ const {
   postModuleEvent,
   alphalakeGetPasswordResetToken,
   alphalakeResetPassword,
+  alphalakeGetOrgSubscriptions,
+  alphalakeGetUserEntities,
 } = require('./platformClient');
 
 // Generic role-gate middleware — not central-auth specific, just bundled here
@@ -19,6 +22,7 @@ const requireRole = (...allowed) => (req, res, next) => {
 module.exports = {
   createCentralAuth,
   createReviewLink,
+  createEntitlements,
   requireRole,
   getFirebaseAuth,
   buildFirebaseCredential,
@@ -27,4 +31,6 @@ module.exports = {
   postModuleEvent,
   alphalakeGetPasswordResetToken,
   alphalakeResetPassword,
+  alphalakeGetOrgSubscriptions,
+  alphalakeGetUserEntities,
 };
