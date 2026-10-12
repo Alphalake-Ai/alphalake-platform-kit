@@ -1,6 +1,6 @@
 // Multi-hub login check: hub assignments the platform no longer lists are
-// dropped at login, and a user left with none is refused. Firebase, Postgres
-// and fetch are stubbed.
+// dropped at login, ones it lists are added with loginHubRole set, and a user
+// left with none is refused. Firebase, Postgres and fetch are stubbed.
 const assert = require('node:assert/strict');
 const { beforeEach, test } = require('node:test');
 
@@ -21,6 +21,8 @@ const { createCentralAuth } = require('../src/server/centralAuth');
 
 const USER = { id: 'u-1', email: 'sam@example.com', name: 'Sam', role: 'viewer', org_id: 'org-local', token_version: 0 };
 let hubRows; // Set of hub names the user holds
+let added; // [{ hub, role }] inserted at login
+let accessChanged; // onUserAccessChanged calls
 let bumps;
 let entities; // platform response, or an Error
 let tokenSeq = 0;
@@ -41,6 +43,13 @@ const pool = {
       hubRows = new Set([...hubRows].filter((h) => keep.has(h)));
       return { rowCount: before - hubRows.size };
     }
+    if (/^INSERT INTO user_hub_roles/.test(sql)) {
+      const [, hub, role] = params;
+      if (hubRows.has(hub)) return { rowCount: 0 };
+      hubRows.add(hub);
+      added.push({ hub, role });
+      return { rowCount: 1 };
+    }
     if (/^UPDATE users SET token_version/.test(sql)) {
       bumps += 1;
       return { rows: [] };
@@ -51,7 +60,7 @@ const pool = {
   },
 };
 
-const auth = createCentralAuth({
+const config = {
   pool,
   jwtSecret: 'test-secret',
   payloadSignatureKey: 'test-key',
@@ -60,11 +69,14 @@ const auth = createCentralAuth({
   hubs: { repeats: 'rp-hub', cardex: 'meds-reader' },
   alphalakeInternalApiUrl: 'https://platform.example',
   alphalakeInternalApiKey: 'k',
-});
+  onUserAccessChanged: async (orgId) => { accessChanged.push(orgId); },
+};
+const auth = createCentralAuth(config);
+const addingAuth = createCentralAuth({ ...config, loginHubRole: 'viewer' });
 
-async function login() {
+async function login(withAuth = auth) {
   let to;
-  await auth.handlers.callback({ query: { token: `t-${++tokenSeq}` } }, { redirect: (url) => { to = url; } });
+  await withAuth.handlers.callback({ query: { token: `t-${++tokenSeq}` } }, { redirect: (url) => { to = url; } });
   return to;
 }
 
@@ -72,6 +84,8 @@ const entity = (masterEntityId, orgId = 'org-ext') => ({ id: `e-${masterEntityId
 
 beforeEach(() => {
   hubRows = new Set(['repeats', 'cardex']);
+  added = [];
+  accessChanged = [];
   bumps = 0;
   entities = [entity('rp-hub'), entity('meds-reader')];
 });
@@ -101,10 +115,39 @@ test('refuses a login with no hub left', async () => {
   assert.equal(hubRows.size, 0);
 });
 
-test('never adds a hub the user has no local role for', async () => {
+test('without loginHubRole, never adds a hub the user has no local role for', async () => {
   hubRows = new Set(['cardex']);
   await login();
   assert.deepEqual([...hubRows], ['cardex']);
+  assert.deepEqual(added, []);
+});
+
+test('with loginHubRole, adds a hub the platform lists at that role, without ending sessions', async () => {
+  hubRows = new Set(['repeats']);
+  assert.match(await login(addingAuth), /_t=/);
+  assert.deepEqual(added, [{ hub: 'cardex', role: 'viewer' }]);
+  assert.deepEqual([...hubRows].sort(), ['cardex', 'repeats']);
+  assert.equal(bumps, 0);
+  assert.deepEqual(accessChanged, ['org-local']);
+});
+
+test('with loginHubRole, a user with no local hub yet is let in', async () => {
+  hubRows = new Set();
+  entities = [entity('meds-reader')];
+  assert.match(await login(addingAuth), /_t=/);
+  assert.deepEqual(added, [{ hub: 'cardex', role: 'viewer' }]);
+});
+
+test('with loginHubRole, nothing is added for another org, an unknown hub, or a hub already held', async () => {
+  hubRows = new Set(['repeats']);
+  entities = [entity('rp-hub'), entity('meds-reader', 'other-org'), entity('pf-hub')];
+  await login(addingAuth);
+  assert.deepEqual(added, []);
+  assert.deepEqual(accessChanged, []);
+});
+
+test('loginHubRole must be one of the roles', () => {
+  assert.throws(() => createCentralAuth({ ...config, loginHubRole: 'owner' }), /loginHubRole must be one of roles/);
 });
 
 test('if the platform cannot be reached, local assignments stand', async () => {

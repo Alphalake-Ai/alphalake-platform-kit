@@ -241,7 +241,12 @@ app.post('/api/internal/platform-events/cardex', centralAuth.handlers.platformEv
   user is assigned to (`/user/{uid}/entities`, in their own org).
   - It drops local assignments the platform no longer lists, which covers a
     lost `user.removed`.
-  - It never adds any, because that list carries no role.
+  - It adds none by default, because that list carries no role. With
+    `loginHubRole` set (0.2.1), e.g. `loginHubRole: 'viewer'`, it adds the
+    hubs the platform lists that are missing here at that role, which covers
+    a lost `user.added`. Pick the least-privileged role; an admin or a later
+    `user.updated` raises it. An existing role is never changed, and a new
+    assignment doesn't end sessions.
   - A user left with no hub is refused with `auth_error=no_hub_access`.
   - If the platform can't be reached, the local assignments stand.
 - **Org subscriptions.** `entitlements.orgHubs(externalOrgId)` returns the

@@ -73,6 +73,10 @@ function createCentralAuth(opts) {
     // { repeats: 'rp-hub', cardex: 'meds-reader' }. Needs the platform's
     // internal API (alphalakeInternalApiUrl/Key) for the login-time check.
     hubs = null,
+    // Multi-hub mode: the role given at login to a hub the platform assigns the
+    // user to but no webhook has (e.g. a lost user.added). The platform's list
+    // carries no role, so pick the least-privileged one. Unset = never add.
+    loginHubRole = null,
     alphalakeInternalApiUrl,
     alphalakeInternalApiKey,
     // Optional createEntitlements() result; its cache is cleared on org.* and
@@ -93,6 +97,9 @@ function createCentralAuth(opts) {
   // forge platform webhooks. Fail closed rather than start with a forgeable endpoint.
   if (!payloadSignatureKey) throw new Error('createCentralAuth: payloadSignatureKey is required — refusing to start with a forgeable webhook endpoint');
   if (!Array.isArray(roles) || roles.length === 0) throw new Error('createCentralAuth: roles must be a non-empty array, most- to least-privileged');
+  if (loginHubRole !== null && !roles.includes(loginHubRole)) {
+    throw new Error(`createCentralAuth: loginHubRole must be one of roles (${roles.join(', ')})`);
+  }
 
   // Inbound: normalise a platform role onto ours. Unrecognised values fall back
   // to defaultRole, so an unknown role can never grant elevated access.
@@ -225,10 +232,11 @@ function createCentralAuth(opts) {
   }
 
   // Multi-hub login check: drops hub assignments the platform no longer lists
-  // for the user in their org (covers a user.removed that never arrived), then
-  // says whether any hub is left. Never adds one: the platform's list carries
-  // no role, so only user.added grants. If the platform can't be reached the
-  // local assignments stand.
+  // for the user in their org (covers a user.removed that never arrived), and
+  // with loginHubRole set adds the ones it lists that are missing here (covers
+  // a lost user.added) at that role; an existing role is never changed. Then
+  // says whether any hub is left. If the platform can't be reached the local
+  // assignments stand.
   async function syncHubsAtLogin(user, uid) {
     const { rows: orgRows } = await pool.query('SELECT external_id FROM organisations WHERE id = $1', [user.org_id]);
     const externalOrgId = orgRows[0]?.external_id ?? null;
@@ -244,6 +252,22 @@ function createCentralAuth(opts) {
       if (rowCount > 0) {
         await pool.query('UPDATE users SET token_version = token_version + 1 WHERE id = $1', [user.id]);
         fileLog('user-actions', { event: 'hub_access_pruned', userId: user.id, kept: assigned });
+      }
+      if (loginHubRole && assigned.length > 0) {
+        // A new assignment only grants, so sessions aren't ended (as setHubRole).
+        const added = [];
+        for (const hub of assigned) {
+          const { rowCount: n } = await pool.query(
+            `INSERT INTO user_hub_roles (user_id, hub, role) VALUES ($1, $2, $3)
+             ON CONFLICT (user_id, hub) DO NOTHING`,
+            [user.id, hub, loginHubRole]
+          );
+          if (n > 0) added.push(hub);
+        }
+        if (added.length > 0) {
+          fileLog('user-actions', { event: 'hub_access_added', userId: user.id, added, role: loginHubRole });
+          await onUserAccessChanged(user.org_id);
+        }
       }
     } catch (err) {
       console.warn(`[CentralAuth] callback: couldn't check hub assignments for uid ${uid}: ${err?.message}`);
