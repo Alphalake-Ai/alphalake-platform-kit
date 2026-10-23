@@ -368,29 +368,37 @@ concepts, and were intentionally left out of this kit.
 ```ts
 // index.css (after your own tailwindcss/shadcn base imports)
 @import "@alphalake/platform-kit/ui/theme.css";
+/* Tailwind v4 skips node_modules, so point it at the kit's components or
+   their classes (sidebar widths, AppContent offset, chrome colors) won't be
+   generated. Path is relative to this CSS file. */
+@source "../node_modules/@alphalake/platform-kit/dist/ui";
 ```
 
 ```tsx
 import { Button, cn, getAvatarColor, getInitials } from '@alphalake/platform-kit/ui';
 ```
 
-`--primary`/`--ring`/`--sidebar-*` are the real Alphalake brand (dark teal +
-bright teal accent) — don't override these unless you have a specific reason
-to diverge from the shared look. The same goes for the typography: `theme.css`
-sets `--font-sans: 'Inter'` and the base font size (`html { font-size: 16px }`)
-so the whole rem-based scale derives from one place. The Inter **font files**
+`--primary`/`--ring`/`--topbar`/`--sidebar-*` are the real Alphalake brand
+(dark teal `#003B46` primary and top bar over a `#001A1D` sidebar, matching
+meds-workspace-frontend-v2) — don't override these unless you have a specific
+reason to diverge from the shared look. `--primary-hover`/`--primary-active`
+(`bg-primary-hover`, `bg-primary-active`) give buttons the same hover/pressed
+shades. The same goes for the typography: `theme.css` sets
+`--font-sans: 'DM Sans'` and the base font size (`html { font-size: 16px }`)
+so the whole rem-based scale derives from one place. The DM Sans **font files**
 are loaded by the consuming app's own `<link>` in `index.html`, from Google
-Fonts with the exact weights the Alphalake brand uses — add this to `<head>`:
+Fonts as the full variable font (the same file `next/font` serves the Next.js
+apps) — add this to `<head>`:
 
 ```html
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,100..1000&display=swap" rel="stylesheet" />
 ```
 
-This is deliberate: the `@fontsource` builds of Inter render slightly
-lighter/thinner than the Google Fonts build at small sizes, and a CSS
-`@import url(...)` of the Google Fonts stylesheet is silently stripped by
-Tailwind v4's bundler — so the HTML `<link>` is the only path that renders
-pixel-identically. The
+A CSS `@import url(...)` of the Google Fonts stylesheet is silently stripped
+by Tailwind v4's bundler, so the HTML `<link>` is the only path that works. A
+Next.js app can load it with `next/font/google` instead
+(`DM_Sans({ subsets: ['latin'], variable: '--font-sans' })`) — that sets the
+same `--font-sans` variable. The
 remaining neutral tokens (background/card/border/etc.) are still generic
 placeholders — override those freely to taste.
 
@@ -426,7 +434,7 @@ function AppShell({ children }: { children: React.ReactNode }) {
           ],
         }]}
       />
-      <Content sidebarAware>{children}</Content>  {/* useSidebar().open to offset margin-left 220px/48px */}
+      <AppContent>{children}</AppContent>  {/* clears the top bar and offsets by the sidebar width */}
     </SidebarProvider>
   );
 }
@@ -435,7 +443,13 @@ function AppShell({ children }: { children: React.ReactNode }) {
 `AppTopBar` always shows the Alphalake wordmark + hamburger toggle; pass
 `notifications={{ count, onClick }}` to add the bell, omit it to leave it out
 entirely. `AppSidebar` handles its own mobile drawer/backdrop and collapsed-
-state tooltips — you only supply `sections`.
+state tooltips — you only supply `sections`, plus an optional `footer` node
+(e.g. a status toggle) pinned below the nav while the sidebar is open.
+Wrap your pages in `AppContent` rather than offsetting them yourself: it pads
+below the 64px top bar and shifts by the sidebar width (256px open, 48px
+collapsed, none on mobile), tracking the collapse state. The widths are
+defined once in the kit; `SIDEBAR_WIDTH_PX` / `SIDEBAR_WIDTH_COLLAPSED_PX` are
+exported if you need them in JS.
 
 ## Required environment variables
 

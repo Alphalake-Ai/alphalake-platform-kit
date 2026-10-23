@@ -1,7 +1,7 @@
 import React from 'react';
 import { X, Menu as MenuIcon } from 'lucide-react';
 import { cn } from './utils';
-import { useSidebar } from './sidebar-context';
+import { useSidebar, sidebarWidthClass } from './sidebar-context';
 
 export interface SidebarNavItem {
   key: string;
@@ -19,14 +19,16 @@ export interface SidebarSection {
 
 export interface AppSidebarProps {
   sections: SidebarSection[];
+  /** Pinned below the nav, above a divider (e.g. a status toggle). Hidden when collapsed. */
+  footer?: React.ReactNode;
 }
 
 // Collapsible dashboard sidebar (dark teal
-// chrome, 225px/48px collapse widths, hover tooltips when collapsed). Nav
+// chrome, 256px/48px collapse widths, hover tooltips when collapsed). Nav
 // items/sections/routing are entirely supplied by the consuming app — this
 // component has no opinion on what a "page" is, only how the panel looks and
 // collapses. Must be rendered under a SidebarProvider.
-export const AppSidebar: React.FC<AppSidebarProps> = ({ sections }) => {
+export const AppSidebar: React.FC<AppSidebarProps> = ({ sections, footer }) => {
   const { open, toggle, close } = useSidebar();
 
   return (
@@ -37,8 +39,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ sections }) => {
 
       <aside
         className={cn(
-          'fixed top-[63px] bottom-0 left-0 z-40 flex flex-col bg-sidebar border-r border-sidebar-border shadow-2xl transition-all duration-300 ease-in-out',
-          open ? 'w-[225px] translate-x-0' : 'w-[48px] -translate-x-full md:translate-x-0'
+          'fixed top-[63px] bottom-0 left-0 z-40 flex flex-col bg-sidebar text-sidebar-foreground border-t border-r border-sidebar-border max-md:shadow-2xl transition-all duration-300 ease-in-out',
+          open ? cn(sidebarWidthClass.open, 'translate-x-0') : cn(sidebarWidthClass.collapsed, '-translate-x-full md:translate-x-0')
         )}
         aria-label="App navigation"
       >
@@ -69,17 +71,17 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ sections }) => {
           )}
         </div>
 
-        <nav className={cn('flex-1 overflow-y-auto transition-all duration-300', open ? 'space-y-4 px-2 pt-5 pb-4' : 'space-y-2 px-0 pt-3 pb-4')}>
+        <nav className={cn('flex-1 overflow-y-auto transition-all duration-300', open ? 'space-y-2 px-2 pt-5 pb-4' : 'space-y-2 px-0 pt-5 pb-4')}>
           {sections.map((section, idx) => (
             <div key={section.title ?? idx} className={open ? 'px-1 py-1' : 'px-0 py-0'}>
               {open ? (
                 section.title && (
-                  <p className="px-3 mb-2 text-[11px] font-semibold tracking-[0.08em] text-sidebar-foreground/50">{section.title}</p>
+                  <p className="flex h-8 items-center px-3 text-[11px] font-semibold tracking-wider text-sidebar-foreground/50">{section.title}</p>
                 )
               ) : (
-                idx > 0 && <div className="w-6 h-px bg-white/10 my-1 mx-auto" />
+                idx > 0 && <div className="w-8 h-px bg-sidebar-border my-2 mx-auto" />
               )}
-              <ul className="space-y-0.5">
+              <ul className={cn('space-y-1', open && 'mt-1')}>
                 {section.items.map(item => (
                   <li key={item.key} className="relative group">
                     <button
@@ -89,15 +91,15 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ sections }) => {
                         'flex items-center rounded-[10px] text-sm font-medium transition-colors text-left transition-all duration-300 p-0',
                         open ? 'w-full gap-2 px-3 h-11' : 'justify-center h-8 w-8 mx-auto',
                         item.isActive
-                          ? 'bg-sidebar-accent text-sidebar-accent-foreground font-semibold'
-                          : 'text-sidebar-foreground/75 hover:bg-sidebar-accent/20 hover:text-sidebar-foreground'
+                          ? 'bg-sidebar-primary text-sidebar-primary-foreground font-semibold'
+                          : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                       )}
                     >
-                      <item.icon className={cn('shrink-0 transition-all duration-300', open ? 'size-[14px]' : 'size-[16px]')} />
+                      <item.icon className="size-4 shrink-0" />
                       {open && <span className="truncate">{item.label}</span>}
                     </button>
                     {!open && (
-                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-2.5 py-1.5 bg-[#0F1E1F] border border-sidebar-border text-white text-xs font-medium rounded-md opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150 shadow-md whitespace-nowrap z-50">
+                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-3 px-3 py-1.5 bg-foreground text-background text-xs opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity duration-150 whitespace-nowrap z-50">
                         {item.label}
                       </div>
                     )}
@@ -107,6 +109,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({ sections }) => {
             </div>
           ))}
         </nav>
+
+        {footer && open && (
+          <div className="shrink-0 border-t border-sidebar-border px-3 py-3">{footer}</div>
+        )}
       </aside>
     </>
   );

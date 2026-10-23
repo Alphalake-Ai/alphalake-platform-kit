@@ -47,10 +47,10 @@ export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItem
   const displayName = user.name || user.email;
 
   return (
-    <header className="fixed top-0 inset-x-0 z-50 flex h-16 items-center justify-between gap-2 sm:gap-4 border-b border-sidebar-accent/40 bg-topbar pr-4 sm:pr-6 text-topbar-foreground shadow-[0_1px_0_rgba(0,0,0,0.18)]">
+    <header className="fixed top-0 inset-x-0 z-50 flex h-16 items-center justify-between gap-2 sm:gap-4 border-b border-topbar-foreground/10 bg-topbar pr-4 sm:pr-6 text-topbar-foreground shadow-[0_1px_0_rgba(0,0,0,0.18)]">
       {/* Left: logo + app label */}
       <div className="flex items-center gap-2 sm:gap-3">
-        <div className="flex w-10 sm:w-[50px] justify-center shrink-0">
+        <div className="flex w-10 sm:w-12 justify-center shrink-0">
           <button
             type="button"
             onClick={toggle}
@@ -76,13 +76,13 @@ export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItem
           <button
             type="button"
             onClick={notifications.onClick}
-            className="relative grid size-9 place-items-center rounded-full border border-white/10 bg-white/5 text-white/85 transition hover:bg-white/10 cursor-pointer"
+            className="relative grid size-9 place-items-center rounded-xl border border-topbar-foreground/10 bg-topbar-foreground/5 text-topbar-foreground/85 transition hover:bg-topbar-foreground/10 cursor-pointer"
             aria-label="Notifications"
           >
             <Bell className="size-5" />
             {notifications.count > 0 && (
-              <span className="absolute top-[-4px] right-[-4px] flex min-w-4 h-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-white px-1">
-                {notifications.count}
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">
+                {notifications.count > 99 ? '99+' : notifications.count}
               </span>
             )}
           </button>
@@ -92,7 +92,7 @@ export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItem
           <button
             type="button"
             onClick={() => setMenuOpen(v => !v)}
-            className="flex items-center gap-2 h-9 rounded-full border border-white/15 bg-white/5 py-1 pl-2 pr-[10px] text-left text-topbar-foreground/90 transition hover:bg-white/10"
+            className="flex items-center gap-2 h-9 rounded-full border border-topbar-foreground/15 bg-topbar-foreground/5 py-1 pl-2 pr-2.5 text-left text-topbar-foreground/90 transition hover:bg-topbar-foreground/10"
             aria-label="User menu"
           >
             <span className={cn('relative grid size-7 place-items-center rounded-full text-white text-xs font-bold shrink-0', user.imageUrl ? 'bg-muted' : getAvatarColor(user.email))}>
@@ -109,14 +109,14 @@ export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItem
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 top-full z-50 mt-2 w-[290px] rounded-[16px] border border-border bg-popover py-1 shadow-xl text-popover-foreground">
+              <div className="absolute right-0 top-full z-50 mt-2 w-[280px] rounded-[14px] border border-border bg-popover py-1 shadow-lg text-popover-foreground">
                 <div className="px-5 py-4 border-b border-border">
-                  <p className="text-[16px] font-bold text-foreground truncate">{displayName}</p>
-                  <p className="text-[13px] text-muted-foreground truncate mt-0.5">{user.email}</p>
-                  <div className="flex flex-col gap-1.5 mt-3">
-                    <div className="rounded-[8px] border border-[#a5f3fc] bg-[#ecfeff]/60 px-3 py-1 text-[10px] font-bold text-[#0e7490] tracking-wide w-fit leading-none">
+                  <p className="text-[15px] font-bold text-foreground truncate">{displayName}</p>
+                  <p className="text-[12.5px] text-muted-foreground truncate mt-0.5">{user.email}</p>
+                  {user.orgName && <p className="text-[12px] font-semibold text-muted-foreground truncate mt-1">{user.orgName}</p>}
+                  <div className="flex flex-col gap-1.5 mt-3 items-start">
+                    <div className="rounded-full border border-teal-300 bg-teal-50/90 px-2.5 py-1 text-[10px] font-semibold text-teal-900 leading-none">
                       {user.roleLabel}
-                      {user.orgName && <span className="font-normal text-[#0891b2]/80 normal-case ml-1">({user.orgName})</span>}
                     </div>
                   </div>
                 </div>
@@ -134,21 +134,21 @@ export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItem
                         item.onClick?.();
                       }}
                       className={cn(
-                        'flex w-full items-center px-5 py-2.5 text-left text-[14.5px] font-medium text-foreground hover:bg-accent transition-colors cursor-pointer',
+                        'flex w-full items-center px-5 py-2.5 text-left text-sm font-medium text-foreground hover:bg-muted transition-colors cursor-pointer',
                         item.badge ? 'justify-between' : 'gap-3'
                       )}
                     >
                       {item.badge ? (
                         <>
                           <span className="flex items-center gap-3">
-                            <item.icon className="size-[18px] text-muted-foreground" />
+                            <item.icon className="size-4 text-muted-foreground" />
                             <span>{item.label}</span>
                           </span>
-                          <span className="rounded-full bg-[#fff1f2] border border-[#ffe4e6] px-2 py-0.5 text-[10px] font-bold text-[#e11d48] leading-none">{item.badge}</span>
+                          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-500">{item.badge}</span>
                         </>
                       ) : (
                         <>
-                          <item.icon className="size-[18px] text-muted-foreground" />
+                          <item.icon className="size-4 text-muted-foreground" />
                           <span>{item.label}</span>
                         </>
                       )}
@@ -160,9 +160,9 @@ export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItem
                   <button
                     type="button"
                     onClick={() => { setMenuOpen(false); onLogout(); }}
-                    className="flex w-full items-center gap-3 px-5 py-2.5 text-left text-[14.5px] font-bold text-destructive hover:bg-destructive/10 transition-colors cursor-pointer"
+                    className="flex w-full items-center gap-3 px-5 py-2.5 text-left text-sm font-bold text-destructive hover:bg-destructive/5 transition-colors cursor-pointer"
                   >
-                    <LogOut className="size-[18px] text-destructive" />
+                    <LogOut className="size-4 text-destructive" />
                     Log Out
                   </button>
                 </div>
@@ -173,12 +173,14 @@ export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItem
 
         {user.orgLogoUrl && (
           <>
-            <span className="hidden sm:block h-5 w-px bg-white/20" />
-            <img
-              src={user.orgLogoUrl}
-              alt={user.orgName || 'Organisation'}
-              className="h-7 max-w-[56px] sm:h-10 sm:max-w-[192px] w-auto object-contain rounded-lg bg-white p-1"
-            />
+            <span className="hidden sm:block h-5 w-px bg-topbar-foreground/20" />
+            <div className="flex h-9 sm:h-12 items-center justify-center rounded-lg border border-white/5 bg-white px-1.5 sm:px-2.5 py-1 shadow-sm shrink-0">
+              <img
+                src={user.orgLogoUrl}
+                alt={user.orgName || 'Organisation'}
+                className="h-6 max-w-[56px] sm:h-9 sm:max-w-[10rem] w-auto object-contain"
+              />
+            </div>
           </>
         )}
       </div>

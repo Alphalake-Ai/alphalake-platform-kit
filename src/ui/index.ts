@@ -1,6 +1,8 @@
 export { cn, getAvatarColor, getInitials } from './utils';
 export { Button, buttonVariants } from './button';
-export { SidebarProvider, useSidebar } from './sidebar-context';
+export { SidebarProvider, useSidebar, SIDEBAR_WIDTH_PX, SIDEBAR_WIDTH_COLLAPSED_PX } from './sidebar-context';
+export { AppContent } from './app-content';
+export type { AppContentProps } from './app-content';
 export type { SidebarContextValue, SidebarProviderProps } from './sidebar-context';
 export { AppSidebar } from './app-sidebar';
 export type { AppSidebarProps, SidebarNavItem, SidebarSection } from './app-sidebar';

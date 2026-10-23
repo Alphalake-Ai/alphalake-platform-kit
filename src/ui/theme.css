@@ -1,11 +1,11 @@
 /* Shadcn/Tailwind v4 token layer. Import
    this AFTER your own `@import "tailwindcss"` (and any `tw-animate-css`/shadcn
    base import). Unlike the rest of this file, the `--primary`/`--ring`/
-   `--sidebar-*` tokens below ARE the Alphalake brand (dark teal chrome +
-   bright teal accent) — that's deliberate: this package
+   `--sidebar-*`/`--topbar` tokens below ARE the Alphalake brand (dark teal
+   chrome and primary, matched to meds-workspace-frontend-v2) — that's deliberate: this package
    is meant to be the one place those colors are defined, so every Alphalake
    app that imports it looks consistent without re-deriving them. The
-   `--font-sans` token (and its self-hosted Inter import, below) is likewise
+   `--font-sans` token (DM Sans, below) is likewise
    the shared brand typography — don't override it unless you're deliberately
    diverging. The non-brand neutrals (background/card/border/etc.) are
    generic placeholders left for you to override. Deliberately excludes
@@ -13,10 +13,11 @@
    outside the token system) — those are feature-specific and belong in the
    consuming app. */
 
-/* Inter — the shared Alphalake brand font (see --font-sans below). The font
-   FILES are loaded by each app's <link> in index.html from Google Fonts with
-   the exact Alphalake brand weights (`Inter:wght@300;400;500;600;700;800`), so
-   text renders consistently across all Alphalake apps. (A CSS `@import url(...)` of that
+/* DM Sans — the shared Alphalake brand font (see --font-sans below). The font
+   FILES are loaded by each app's <link> in index.html from Google Fonts as the
+   full variable font (`DM+Sans:opsz,wght@9..40,100..1000`, what next/font
+   loads in the Next.js apps), so text renders consistently across all
+   Alphalake apps. (A CSS `@import url(...)` of that
    stylesheet is silently stripped by Tailwind v4's bundler, so it must be the
    HTML <link> in the consuming app's index.html.) */
 
@@ -25,7 +26,7 @@
 @theme inline {
   --font-heading: var(--font-sans);
   /* Shared brand font — override only to deliberately diverge. */
-  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-sans: 'DM Sans', system-ui, sans-serif;
   --color-topbar: var(--topbar);
   --color-topbar-foreground: var(--topbar-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -53,6 +54,8 @@
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
@@ -82,80 +85,86 @@
 
 :root {
   --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  --foreground: oklch(0.148 0.004 228.8);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.148 0.004 228.8);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  --popover-foreground: oklch(0.148 0.004 228.8);
   /* Alphalake brand teal — see file header. */
-  --primary: #0d9488;
+  --primary: #003b46;
   --primary-foreground: #ffffff;
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  --primary-hover: #002f33;
+  --primary-active: #005961;
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.963 0.002 197.1);
+  --muted-foreground: oklch(0.56 0.021 213.5);
+  --accent: oklch(0.963 0.002 197.1);
+  --accent-foreground: oklch(0.218 0.008 223.9);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: #14b8a6;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --border: oklch(0.925 0.005 214.3);
+  --input: oklch(0.925 0.005 214.3);
+  --ring: oklch(0.723 0.014 214.4);
+  --chart-1: oklch(0.879 0.169 91.605);
+  --chart-2: oklch(0.769 0.188 70.08);
+  --chart-3: oklch(0.666 0.179 58.318);
+  --chart-4: oklch(0.555 0.163 48.998);
+  --chart-5: oklch(0.473 0.137 46.201);
   --radius: 0.625rem;
 
   /* Dashboard chrome (AppTopBar/AppSidebar) — fixed brand color, not a
      light/dark-mode concern, so identical in both :root and .dark below.
-     topbar (#053B45) is deliberately a shade lighter than sidebar
+     The top bar is the primary teal (#003B46) over a near-black sidebar
      (#001A1D) — that's the canonical Alphalake pairing, not an error. */
-  --topbar: #053b45;
+  --topbar: #003b46;
   --topbar-foreground: #ffffff;
   --sidebar: #001a1d;
-  --sidebar-foreground: #ffffff;
-  --sidebar-primary: #155159;
+  --sidebar-foreground: #a3b8ba;
+  --sidebar-primary: #005961;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #155159;
+  --sidebar-accent: #002f33;
   --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgb(220 229 232 / 10%);
-  --sidebar-ring: #14b8a6;
+  --sidebar-border: rgb(255 255 255 / 10%);
+  --sidebar-ring: #005961;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: #14b8a6;
-  --primary-foreground: #001a1d;
-  --secondary: oklch(0.269 0 0);
+  --background: oklch(0.148 0.004 228.8);
+  --foreground: oklch(0.987 0.002 197.1);
+  --card: oklch(0.218 0.008 223.9);
+  --card-foreground: oklch(0.987 0.002 197.1);
+  --popover: oklch(0.218 0.008 223.9);
+  --popover-foreground: oklch(0.987 0.002 197.1);
+  --primary: #003b46;
+  --primary-foreground: #ffffff;
+  --primary-hover: #002f33;
+  --primary-active: #005961;
+  --secondary: oklch(0.274 0.006 286.033);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.275 0.011 216.9);
+  --muted-foreground: oklch(0.723 0.014 214.4);
+  --accent: oklch(0.275 0.011 216.9);
+  --accent-foreground: oklch(0.987 0.002 197.1);
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: #14b8a6;
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --ring: oklch(0.56 0.021 213.5);
+  --chart-1: oklch(0.879 0.169 91.605);
+  --chart-2: oklch(0.769 0.188 70.08);
+  --chart-3: oklch(0.666 0.179 58.318);
+  --chart-4: oklch(0.555 0.163 48.998);
+  --chart-5: oklch(0.473 0.137 46.201);
 
+  --topbar: #003b46;
+  --topbar-foreground: #ffffff;
   --sidebar: #001a1d;
-  --sidebar-foreground: #ffffff;
-  --sidebar-primary: #155159;
+  --sidebar-foreground: #a3b8ba;
+  --sidebar-primary: #005961;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #155159;
+  --sidebar-accent: #002f33;
   --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgb(220 229 232 / 10%);
-  --sidebar-ring: #14b8a6;
+  --sidebar-border: rgb(255 255 255 / 10%);
+  --sidebar-ring: #005961;
 }
 
 @layer base {

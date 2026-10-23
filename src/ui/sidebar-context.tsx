@@ -1,5 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 
+// The one place the chrome's dimensions live: AppSidebar sizes itself and
+// AppContent offsets itself from these, so apps never hardcode them. Kept as
+// whole literal class strings so Tailwind's scanner picks them up.
+export const SIDEBAR_WIDTH_PX = 256;
+export const SIDEBAR_WIDTH_COLLAPSED_PX = 48;
+export const sidebarWidthClass = { open: 'w-64', collapsed: 'w-12' } as const;
+export const contentOffsetClass = { open: 'md:ml-64', collapsed: 'md:ml-12' } as const;
+
 export interface SidebarContextValue {
   open: boolean;
   toggle: () => void;

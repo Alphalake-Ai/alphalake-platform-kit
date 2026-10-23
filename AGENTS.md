@@ -89,13 +89,14 @@ development. Keep both modes working.
 The brand identity lives in `@alphalake/platform-kit/ui/theme.css` — the one
 place Alphalake colors and type are defined:
 
-- **Chrome:** dark teal top bar + sidebar (`--topbar`, `--sidebar` tokens),
-  bright teal accent as `--primary`/`--ring`. Canonical across all Alphalake
-  apps.
-- **Typography:** Inter (`--font-sans`, weights 300–800). The font files load
-  via a `<link>` to Google Fonts in the app's `index.html` with the exact
-  weight set `Inter:wght@300;400;500;600;700;800` — a CSS `@import` is
-  silently stripped by Tailwind v4's bundler, so it must be the HTML link.
+- **Chrome:** dark teal top bar (`--topbar`, `#003B46`, same as `--primary`)
+  over a near-black teal sidebar (`--sidebar`, `#001A1D`), matching
+  meds-workspace-frontend-v2. Canonical across all Alphalake apps.
+- **Typography:** DM Sans (`--font-sans`). The font files load via a `<link>`
+  to Google Fonts in the app's `index.html`
+  (`DM+Sans:opsz,wght@9..40,100..1000`) — a CSS `@import` is silently
+  stripped by Tailwind v4's bundler, so it must be the HTML link (Next.js
+  apps can use `next/font/google`'s `DM_Sans` with `variable: '--font-sans'`).
 - **Usage rules:** import `theme.css` AFTER `@import "tailwindcss"` (and any
   shadcn/`tw-animate-css` base). Never hardcode brand hex values in
   components — use the tokens (`bg-primary`, `text-muted-foreground`,
@@ -105,8 +106,8 @@ place Alphalake colors and type are defined:
 - **Chrome components:** build dashboards on `AppTopBar` + `AppSidebar` +
   `SidebarProvider` from `.../ui` rather than rolling your own shell — pass
   your nav `sections`, get the Alphalake look, mobile drawer, and collapse
-  behaviour for free. Use `Content sidebarAware` so main content offsets the
-  sidebar.
+  behaviour for free. Wrap pages in `AppContent` so main content clears the
+  top bar and offsets the sidebar — never hardcode the sidebar width.
 
 ## How the backend should be laid out
 
@@ -141,7 +142,7 @@ keys).
    (`ensureSchema()` at startup; callback / refresh-profile / platform-events
    routes; `authenticate` on everything else).
 3. Scaffold the frontend with the kit's client + ui subpaths: `CentralAuthGate`,
-   `AuthErrorToast`, `AppTopBar`/`AppSidebar`, `theme.css`, Inter `<link>`.
+   `AuthErrorToast`, `AppTopBar`/`AppSidebar`, `theme.css`, DM Sans `<link>`.
 4. Choose your own `roles` array and `onUserAccessChanged` implementation —
    these are app-specific by design.
 5. Typecheck (`npm run typecheck` in this repo) and keep both
