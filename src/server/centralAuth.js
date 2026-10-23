@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { getFirebaseAuth } = require('./firebase');
-const { generatePayloadSignature, alphalakeGetUserEntities } = require('./platformClient');
+const { generatePayloadSignature, signatureMatches, alphalakeGetUserEntities } = require('./platformClient');
 
 // Builds the Alphalake central-auth backend integration: session JWTs, the
 // Firebase login callback, the inbound platform-events webhook (org/user
@@ -404,12 +404,8 @@ function createCentralAuth(opts) {
   // `hub` is null for a single-hub app, or the hub whose URL this is.
   const makePlatformEvents = (hub) => async (req, res) => {
     // Verify the HMAC signature (x-payload-signature) against the shared key.
-    const signature = req.headers['x-payload-signature'];
     const expected = generatePayloadSignature(req.body, payloadSignatureKey);
-    const sigOk =
-      typeof signature === 'string' &&
-      signature.length === expected.length &&
-      crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    const sigOk = signatureMatches(req.headers['x-payload-signature'], expected);
 
     const { action, orgId, entityId, payload } = req.body || {};
 

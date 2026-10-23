@@ -11,16 +11,21 @@ function generatePayloadSignature(payload, key) {
     .digest('hex');
 }
 
+// Timing-safe comparison of a received x-payload-signature header against the
+// expected signature. Compares byte lengths, not string lengths: header values
+// decode as latin1, so 64 non-ASCII chars pass a .length check but encode to
+// 128 UTF-8 bytes, and timingSafeEqual would then throw instead of returning false.
+function signatureMatches(signature, expected) {
+  if (typeof signature !== 'string') return false;
+  const sigBuf = Buffer.from(signature);
+  const expectedBuf = Buffer.from(expected);
+  return sigBuf.length === expectedBuf.length && crypto.timingSafeEqual(sigBuf, expectedBuf);
+}
+
 // Verifies the x-payload-signature header on an inbound platform webhook
 // against the shared key, using a timing-safe comparison.
 function verifyWebhookSignature(req, key) {
-  const signature = req.headers['x-payload-signature'];
-  const expected = generatePayloadSignature(req.body, key);
-  return (
-    typeof signature === 'string' &&
-    signature.length === expected.length &&
-    crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
-  );
+  return signatureMatches(req.headers['x-payload-signature'], generatePayloadSignature(req.body, key));
 }
 
 // Drop null/undefined keys so the platform only receives fields we actually set.
@@ -118,6 +123,7 @@ const alphalakeGetUserEntities = (firebaseUid, config) =>
 
 module.exports = {
   generatePayloadSignature,
+  signatureMatches,
   verifyWebhookSignature,
   postModuleEvent,
   alphalakeGetPasswordResetToken,

@@ -205,6 +205,16 @@ Repeats are still recorded in `processed_webhook_events` and logged as
 `TEST_DATABASE_URL=<postgres url> npm test` runs these scenarios against a
 real database (in a throwaway schema).
 
+### Malformed webhook signatures get a 401 (0.3.1)
+
+The signature check compared string lengths before `timingSafeEqual`. Header
+values decode as latin1, so a header of 64 non-ASCII characters passed that
+check but encoded to 128 bytes, and `timingSafeEqual` threw. Anyone could send
+one without the key, and the request never got an answer: an Express 4 app
+logs the unhandled rejection and the request hangs, or the Node process exits
+if nothing catches it. Byte lengths are compared now, in both the webhook
+handler and `verifyWebhookSignature`, so it's a plain 401.
+
 ### Multi-hub backends (0.2.0)
 
 One backend can serve several platform hubs, e.g. Repeats Hub and Meds Reader
