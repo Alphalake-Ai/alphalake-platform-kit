@@ -1,6 +1,7 @@
 const { createCentralAuth } = require('./centralAuth');
 const { createReviewLink } = require('./reviewLink');
 const { createEntitlements } = require('./entitlements');
+const { createWorkspaces } = require('./workspaces');
 const { getFirebaseAuth, buildFirebaseCredential } = require('./firebase');
 const {
   generatePayloadSignature,
@@ -23,6 +24,7 @@ module.exports = {
   createCentralAuth,
   createReviewLink,
   createEntitlements,
+  createWorkspaces,
   requireRole,
   getFirebaseAuth,
   buildFirebaseCredential,

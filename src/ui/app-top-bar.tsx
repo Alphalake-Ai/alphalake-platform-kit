@@ -25,6 +25,17 @@ export interface TopBarMenuItem {
   badge?: string;
 }
 
+export interface TopBarOrgAction {
+  key: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  onClick?: () => void;
+  href?: string;
+  external?: boolean;
+  /** Filled button (e.g. "View Workspaces"); the rest are outlined. */
+  primary?: boolean;
+}
+
 export interface AppTopBarProps {
   /** Two-line app label next to the Alphalake logo — differs per app (e.g. ["Ops Cloud", "Workspace"]). */
   titleLines: [string, string];
@@ -36,6 +47,12 @@ export interface AppTopBarProps {
   notifications?: { count: number; onClick: () => void };
   /** Omit to hide the light/dark toggle. The app owns the theme state and applies it. */
   theme?: { dark: boolean; onToggle: () => void };
+  /**
+   * Card shown when the org logo is hovered (or tapped): the org name, this
+   * subtitle (usually the workspace name), then the actions. Omit for a plain
+   * logo. With it set, an org with no logo gets its name in the logo's place.
+   */
+  orgMenu?: { subtitle: string; actions: TopBarOrgAction[] };
 }
 
 // Fixed dashboard header (dark teal, the
@@ -43,9 +60,12 @@ export interface AppTopBarProps {
 // text, menu items, and notification bell are all supplied by the consuming
 // app; only the container styling and the Alphalake branding are fixed.
 // Must be rendered under a SidebarProvider (drives the hamburger toggle).
-export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItems, onLogout, notifications, theme }) => {
+export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItems, onLogout, notifications, theme, orgMenu }) => {
   const { toggle } = useSidebar();
   const [menuOpen, setMenuOpen] = useState(false);
+  // Hover opens the org card on desktop; a click pins it open, for touch.
+  const [orgMenuOpen, setOrgMenuOpen] = useState(false);
+  const showOrgBadge = Boolean(user.orgLogoUrl || (orgMenu && user.orgName));
   const displayName = user.name || user.email;
 
   return (
@@ -185,15 +205,68 @@ export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItem
           )}
         </div>
 
-        {user.orgLogoUrl && (
+        {showOrgBadge && (
           <>
             <span className="hidden sm:block h-5 w-px bg-topbar-foreground/20" />
-            <div className="flex h-9 sm:h-12 items-center justify-center rounded-lg border border-white/5 bg-white px-1.5 sm:px-2.5 py-1 shadow-sm shrink-0">
-              <img
-                src={user.orgLogoUrl}
-                alt={user.orgName || 'Organisation'}
-                className="h-6 max-w-[56px] sm:h-9 sm:max-w-[10rem] w-auto object-contain"
-              />
+            <div
+              className={cn('group relative shrink-0', orgMenu && 'cursor-pointer')}
+              onClick={orgMenu ? () => setOrgMenuOpen(v => !v) : undefined}
+            >
+              <div className="flex h-9 sm:h-12 items-center justify-center rounded-lg border border-white/5 bg-white px-1.5 sm:px-2.5 py-1 shadow-sm">
+                {user.orgLogoUrl ? (
+                  <img
+                    src={user.orgLogoUrl}
+                    alt={user.orgName || 'Organisation'}
+                    className={cn('h-6 max-w-[56px] sm:h-9 sm:max-w-[10rem] w-auto object-contain', orgMenu && 'transition-opacity group-hover:opacity-90')}
+                  />
+                ) : (
+                  <span className="max-w-[7rem] sm:max-w-[10rem] truncate px-1 text-xs font-bold text-gray-800">{user.orgName}</span>
+                )}
+              </div>
+
+              {orgMenu && (
+                <>
+                  {orgMenuOpen && (
+                    <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setOrgMenuOpen(false); }} />
+                  )}
+                  {/* pt-2 rather than mt-2, so the pointer can cross the gap without the hover dropping */}
+                  <div
+                    onClick={e => e.stopPropagation()}
+                    className={cn('absolute right-0 top-full z-50 pt-2', orgMenuOpen ? 'block' : 'hidden group-hover:block')}
+                  >
+                    <div className="w-[240px] rounded-2xl border border-gray-100 bg-white p-5 text-left shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
+                      {user.orgName && <div className="truncate text-xs font-extrabold text-gray-700">{user.orgName}</div>}
+                      <div className="mt-1 truncate text-xs font-extrabold text-gray-700/50">{orgMenu.subtitle}</div>
+                      {orgMenu.actions.length > 0 && (
+                        <div className="mt-4 flex flex-col gap-2">
+                          {orgMenu.actions.map(action => (
+                            <a
+                              key={action.key}
+                              href={action.href ?? '#'}
+                              target={action.external ? '_blank' : undefined}
+                              rel={action.external ? 'noreferrer' : undefined}
+                              onClick={e => {
+                                setOrgMenuOpen(false);
+                                if (!action.href) e.preventDefault();
+                                action.onClick?.();
+                              }}
+                              className={cn(
+                                'flex w-full items-center justify-start gap-3 rounded-xl px-5 py-2.5 text-xs font-bold shadow-sm transition cursor-pointer',
+                                action.primary
+                                  ? 'bg-topbar text-topbar-foreground hover:bg-topbar/90 hover:shadow-md'
+                                  : 'border border-topbar/20 bg-white text-topbar hover:border-topbar hover:bg-topbar/5'
+                              )}
+                            >
+                              <action.icon className="size-3.5" />
+                              {action.label}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}

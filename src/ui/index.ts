@@ -7,5 +7,7 @@ export type { SidebarContextValue, SidebarProviderProps } from './sidebar-contex
 export { AppSidebar } from './app-sidebar';
 export type { AppSidebarProps, SidebarNavItem, SidebarSection } from './app-sidebar';
 export { AppTopBar } from './app-top-bar';
-export type { AppTopBarProps, TopBarUser, TopBarMenuItem } from './app-top-bar';
+export type { AppTopBarProps, TopBarUser, TopBarMenuItem, TopBarOrgAction } from './app-top-bar';
+export { WorkspaceSwitcher, DEFAULT_WORKSPACE_DISPLAY } from './workspace-switcher';
+export type { WorkspaceSwitcherProps, Workspace, WorkspacesResponse, WorkspaceDisplay } from './workspace-switcher';
 export { ALPHALAKE_LOGO_WHITE } from './assets/alphalake-logo-white';

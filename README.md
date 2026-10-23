@@ -455,6 +455,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
 entirely. Likewise `theme={{ dark, onToggle }}` adds a sun/moon light/dark
 toggle before the bell; the kit only renders the button, so your app keeps
 the theme state and applies it (e.g. a `dark` class on its content).
+`orgMenu={{ subtitle, actions }}` turns the org logo into a hover (or tap)
+card, as in Meds Workspace: org name, the subtitle, then your buttons, e.g. a
+`primary` "View Workspaces" that opens `WorkspaceSwitcher` and an
+"Organisation Admin" link (see "Workspace switcher" below).
 `AppSidebar` handles its own mobile drawer/backdrop and collapsed-
 state tooltips — you only supply `sections`, plus an optional `footer` node
 (e.g. a status toggle) pinned below the nav while the sidebar is open.
@@ -463,6 +467,50 @@ below the 64px top bar and shifts by the sidebar width (256px open, 48px
 collapsed, none on mobile), tracking the collapse state. The widths are
 defined once in the kit; `SIDEBAR_WIDTH_PX` / `SIDEBAR_WIDTH_COLLAPSED_PX` are
 exported if you need them in JS.
+
+### Workspace switcher (0.4.0)
+
+The "View Workspaces" modal from Meds Workspace. The server half lists the
+workspaces in this app's cloud that the user can open: the org subscribes to
+it and the user holds at least one hub in it. This app's own workspace is
+always listed first, marked Current.
+
+```js
+// server — workspaceMasterEntityId is this app's workspace on the platform
+const workspaces = createWorkspaces({ workspaceMasterEntityId: 'ops-workspace', ...platformApi }); // ttlMs: default 1 min
+app.get('/api/workspaces', authenticate, async (req, res) => {
+  // Platform ids: the org's external id and the user's Firebase uid
+  res.json(await workspaces.listForUser(externalOrgId, firebaseUid));
+});
+```
+
+```tsx
+// client
+const [switcherOpen, setSwitcherOpen] = useState(false);
+<AppTopBar
+  /* … */
+  orgMenu={{
+    subtitle: 'Ops Workspace',
+    actions: [
+      { key: 'workspaces', label: 'View Workspaces', icon: Building2, primary: true, onClick: () => setSwitcherOpen(true) },
+      { key: 'org-admin', label: 'Organisation Admin', icon: Users, onClick: () => navigate('/team') },
+    ],
+  }}
+/>
+<WorkspaceSwitcher
+  open={switcherOpen}
+  onOpenChange={setSwitcherOpen}
+  load={() => api.get('/api/workspaces')}
+  orgName={org.name}
+  orgLogoUrl={org.logoUrl}
+  onNavigate={navigate}
+/>
+```
+
+Cards are styled by the platform's `subType` (`DEFAULT_WORKSPACE_DISPLAY`:
+`meds`, `finance`, `ops`, `customer-success`). Pass `display` to give a
+workspace an `href`, or change its icon or blurb; one without an `href` goes
+to `fallbackHref` (default `/coming-soon`).
 
 ## Required environment variables
 
