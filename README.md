@@ -452,7 +452,10 @@ function AppShell({ children }: { children: React.ReactNode }) {
 
 `AppTopBar` always shows the Alphalake wordmark + hamburger toggle; pass
 `notifications={{ count, onClick }}` to add the bell, omit it to leave it out
-entirely. `AppSidebar` handles its own mobile drawer/backdrop and collapsed-
+entirely. Likewise `theme={{ dark, onToggle }}` adds a sun/moon light/dark
+toggle before the bell; the kit only renders the button, so your app keeps
+the theme state and applies it (e.g. a `dark` class on its content).
+`AppSidebar` handles its own mobile drawer/backdrop and collapsed-
 state tooltips — you only supply `sections`, plus an optional `footer` node
 (e.g. a status toggle) pinned below the nav while the sidebar is open.
 Wrap your pages in `AppContent` rather than offsetting them yourself: it pads

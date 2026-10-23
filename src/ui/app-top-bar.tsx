@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu as HamburgerIcon, ChevronDown, Bell, LogOut } from 'lucide-react';
+import { Menu as HamburgerIcon, ChevronDown, Bell, LogOut, Moon, Sun } from 'lucide-react';
 import { cn, getAvatarColor, getInitials } from './utils';
 import { useSidebar } from './sidebar-context';
 import { ALPHALAKE_LOGO_WHITE } from './assets/alphalake-logo-white';
@@ -34,6 +34,8 @@ export interface AppTopBarProps {
   onLogout: () => void;
   /** Omit to hide the notification bell entirely. */
   notifications?: { count: number; onClick: () => void };
+  /** Omit to hide the light/dark toggle. The app owns the theme state and applies it. */
+  theme?: { dark: boolean; onToggle: () => void };
 }
 
 // Fixed dashboard header (dark teal, the
@@ -41,7 +43,7 @@ export interface AppTopBarProps {
 // text, menu items, and notification bell are all supplied by the consuming
 // app; only the container styling and the Alphalake branding are fixed.
 // Must be rendered under a SidebarProvider (drives the hamburger toggle).
-export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItems, onLogout, notifications }) => {
+export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItems, onLogout, notifications, theme }) => {
   const { toggle } = useSidebar();
   const [menuOpen, setMenuOpen] = useState(false);
   const displayName = user.name || user.email;
@@ -70,8 +72,20 @@ export const AppTopBar: React.FC<AppTopBarProps> = ({ titleLines, user, menuItem
         </div>
       </div>
 
-      {/* Right: notifications + user menu + org logo */}
+      {/* Right: theme toggle + notifications + user menu + org logo */}
       <div className="flex items-center gap-2 sm:gap-4">
+        {theme && (
+          <button
+            type="button"
+            onClick={theme.onToggle}
+            className="grid size-9 place-items-center rounded-xl border border-topbar-foreground/10 bg-topbar-foreground/5 text-topbar-foreground/85 transition hover:bg-topbar-foreground/10 cursor-pointer"
+            aria-label={theme.dark ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={theme.dark ? 'Light mode' : 'Dark mode'}
+          >
+            {theme.dark ? <Sun className="size-5" /> : <Moon className="size-5" />}
+          </button>
+        )}
+
         {notifications && (
           <button
             type="button"
